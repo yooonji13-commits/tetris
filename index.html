@@ -31,14 +31,15 @@
   @media (prefers-reduced-motion: reduce){ *{ animation:none !important; transition:none !important; } }
 
   #app{
-    /* --app-h 는 JS가 실제로 보이는 높이(사파리 툴바를 뺀 높이)를 넣어 준다 */
+    position:relative;
+    /* --app-h 는 JS가 실제로 보이는 높이(사파리 툴바·키보드를 뺀 높이)를 넣어 준다 */
     height:var(--app-h, 100%); display:flex; flex-direction:column; gap:5px;
-    padding:calc(env(safe-area-inset-top) + 6px) calc(env(safe-area-inset-right) + 8px)
-            calc(env(safe-area-inset-bottom) + 4px) calc(env(safe-area-inset-left) + 8px);
+    padding:calc(env(safe-area-inset-top) + 6px) calc(env(safe-area-inset-right) + 4px)
+            calc(env(safe-area-inset-bottom) + 4px) calc(env(safe-area-inset-left) + 4px);
   }
 
   /* ---------- 점수 줄 ---------- */
-  #hud{ display:flex; align-items:center; gap:6px; flex:0 0 auto; }
+  #hud{ display:flex; align-items:center; gap:5px; flex:0 0 auto; }
   .stat{
     flex:1 1 0; min-width:0; padding:4px 8px; border-radius:11px;
     background:rgba(255,255,255,.04); border:1px solid rgba(160,170,255,.12);
@@ -67,26 +68,6 @@
   }
   #board-wrap.shake{ animation:shake .22s ease; }
 
-  /* ---------- 오버레이 ---------- */
-  #overlay{
-    position:absolute; inset:0; border-radius:14px; display:none;
-    flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:18px;
-    background:rgba(7,7,14,.88); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
-    text-align:center;
-  }
-  #overlay.show{ display:flex; }
-  #ov-title{ font-size:27px; font-weight:800; letter-spacing:.04em;
-             background:linear-gradient(90deg,#7de3ff,#a78bfa,#ff9ed2);
-             -webkit-background-clip:text; background-clip:text; color:transparent; }
-  #ov-score{ font-size:13px; color:#e9ecff; font-variant-numeric:tabular-nums; line-height:1.7; white-space:pre-line; }
-  #ov-sub{ font-size:12px; color:#a0a7d6; line-height:1.75; white-space:pre-line; }
-  .primary-btn{
-    padding:11px 28px; border-radius:999px; font-size:15px; font-weight:700; color:#0a0a14;
-    background:linear-gradient(90deg,#7de3ff,#a78bfa); border:0;
-    transition:transform .1s ease; margin-top:2px;
-  }
-  .primary-btn:active{ transform:scale(.95); }
-
   #toast{
     position:absolute; left:0; right:0; top:26%; text-align:center; pointer-events:none;
     font-size:17px; font-weight:800; letter-spacing:.03em; opacity:0;
@@ -96,15 +77,63 @@
                         75%{opacity:1;} 100%{opacity:0;transform:translateY(-12px) scale(1);} }
   #toast.on{ animation:toast-pop .95s ease forwards; }
 
-  /* ---------- 조작 버튼 ---------- */
-  #pad{ flex:0 0 auto; display:grid; grid-template-columns:repeat(2,1fr); gap:6px; }
-  .pad-btn{
-    height:40px; border-radius:12px; font-size:18px; font-weight:600; color:#d7dcff;
-    background:rgba(255,255,255,.045); border:1px solid rgba(160,170,255,.14);
-    display:flex; align-items:center; justify-content:center; padding:0;
-    transition:transform .08s ease, background-color .12s ease;
+  /* ---------- 오버레이 ---------- */
+  #overlay{
+    position:absolute; inset:0; display:none;
+    flex-direction:column; align-items:center; justify-content:center; gap:11px;
+    padding:20px calc(env(safe-area-inset-right) + 18px) 20px calc(env(safe-area-inset-left) + 18px);
+    background:rgba(7,7,14,.9); -webkit-backdrop-filter:blur(7px); backdrop-filter:blur(7px);
+    text-align:center; overflow-y:auto; -webkit-overflow-scrolling:touch;
   }
-  .pad-btn:active,.pad-btn.held{ transform:scale(.96); background:rgba(167,139,250,.26); border-color:rgba(190,170,255,.45); }
+  #overlay.show{ display:flex; }
+  #ov-title{ font-size:27px; font-weight:800; letter-spacing:.04em; flex:0 0 auto;
+             background:linear-gradient(90deg,#7de3ff,#a78bfa,#ff9ed2);
+             -webkit-background-clip:text; background-clip:text; color:transparent; }
+  #ov-score{ font-size:13px; color:#e9ecff; font-variant-numeric:tabular-nums; line-height:1.7;
+             white-space:pre-line; flex:0 0 auto; }
+  #ov-sub{ font-size:12px; color:#a0a7d6; line-height:1.75; white-space:pre-line; flex:0 0 auto; }
+
+  /* 이름 입력 */
+  #ov-form{ display:none; flex:0 0 auto; }
+  #ov-form.show{ display:block; }
+  #ov-name{
+    width:170px; padding:10px 12px; border-radius:11px; font-size:16px; text-align:center;
+    font-family:inherit; color:#e9ecff;
+    background:rgba(255,255,255,.07); border:1px solid rgba(160,170,255,.3);
+    -webkit-user-select:text; user-select:text; touch-action:manipulation;
+  }
+  #ov-name:focus{ outline:none; border-color:rgba(167,139,250,.75); background:rgba(255,255,255,.1); }
+
+  /* 기록 목록 */
+  #ov-list{ display:none; width:100%; max-width:290px; flex:0 1 auto; text-align:left; }
+  #ov-list.show{ display:block; }
+  .rank-row{ display:flex; align-items:center; gap:9px; padding:7px 2px;
+             border-bottom:1px solid rgba(160,170,255,.09); }
+  .rank-row:last-child{ border-bottom:0; }
+  .rank-no{ flex:0 0 17px; text-align:right; font-size:11px; font-weight:700; color:#8990c0; }
+  .rank-main{ flex:1 1 auto; min-width:0; }
+  .rank-name{ display:block; font-size:13px; font-weight:700;
+              white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .rank-meta{ display:block; font-size:9.5px; color:#8990c0; letter-spacing:.02em; }
+  .rank-score{ flex:0 0 auto; font-size:14px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .rank-row.is-new .rank-name{ color:#c4a8ff; }
+  .rank-row.is-new .rank-score{ color:#c4a8ff; }
+  .rank-empty{ font-size:12px; color:#8990c0; text-align:center; padding:18px 0; }
+
+  #ov-actions{ display:flex; align-items:center; gap:10px; flex:0 0 auto; margin-top:2px; }
+  .primary-btn{
+    padding:11px 28px; border-radius:999px; font-size:15px; font-weight:700; color:#0a0a14;
+    background:linear-gradient(90deg,#7de3ff,#a78bfa); border:0;
+    transition:transform .1s ease;
+  }
+  .primary-btn:active{ transform:scale(.95); }
+  .ghost-btn{
+    padding:11px 18px; border-radius:999px; font-size:13px; font-weight:600; color:#b6bdea;
+    background:transparent; border:1px solid rgba(160,170,255,.25);
+    transition:transform .1s ease, background-color .15s ease;
+  }
+  .ghost-btn:active{ transform:scale(.95); background:rgba(255,255,255,.07); }
+  .ghost-btn.hide{ display:none; }
 </style>
 </head>
 <body>
@@ -120,18 +149,23 @@
     <div id="board-wrap">
       <canvas id="cv-board"></canvas>
       <div id="toast"></div>
-      <div id="overlay" class="show">
-        <div id="ov-title">테트리스</div>
-        <div id="ov-score"></div>
-        <div id="ov-sub"></div>
-        <button class="primary-btn" id="btn-start">시작</button>
-      </div>
     </div>
   </div>
 
-  <div id="pad">
-    <button class="pad-btn" data-act="soft" aria-label="천천히 내리기">↓</button>
-    <button class="pad-btn" data-act="hard" aria-label="바로 내리기">⤓</button>
+  <div id="overlay" class="show">
+    <div id="ov-title">테트리스</div>
+    <div id="ov-score"></div>
+    <div id="ov-sub"></div>
+    <div id="ov-form">
+      <input id="ov-name" type="text" maxlength="8" placeholder="이름"
+             autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+             enterkeyhint="done" aria-label="기록에 남길 이름">
+    </div>
+    <div id="ov-list"></div>
+    <div id="ov-actions">
+      <button class="primary-btn" id="btn-primary">시작</button>
+      <button class="ghost-btn" id="btn-second">기록</button>
+    </div>
   </div>
 </div>
 
@@ -142,7 +176,8 @@
 /* ================= 상수 ================= */
 const COLS = 10, ROWS = 20;
 const LOCK_DELAY = 500, LOCK_RESET_MAX = 15, CLEAR_MS = 240;
-const SOFT_MS = 30;                      /* ↓를 누르고 있을 때 한 칸 내려오는 시간 */
+const SOFT_MS = 30;                 /* 아래로 쓸고 있을 때 한 칸 내려오는 시간 */
+const MAX_SCORES = 10;              /* 기록표에 남기는 개수 */
 
 const COLORS = {
   I:'#4ecdc4', J:'#5b8dee', L:'#f2994a', O:'#f2c94c',
@@ -199,19 +234,74 @@ const $ = function(id){ return document.getElementById(id); };
 const boardCv = $('cv-board'), boardCx = boardCv.getContext('2d');
 const stageEl = $('stage'), wrapEl = $('board-wrap'), overlayEl = $('overlay');
 const toastEl = $('toast');
+const ovTitle = $('ov-title'), ovScore = $('ov-score'), ovSub = $('ov-sub');
+const ovForm = $('ov-form'), ovName = $('ov-name'), ovList = $('ov-list');
+const btnPrimary = $('btn-primary'), btnSecond = $('btn-second');
 
 /* ================= 상태 ================= */
 let grid, piece, bag;
 let queue = [];
 let score = 0, level = 1, lines = 0, combo = -1, backToBack = false;
-let best = 0;
 let state = 'ready';            // ready | playing | paused | clearing | over
 let dropAcc = 0, lockTimer = 0, lockResets = 0, softHeld = false;
 let clearRows = [], clearTimer = 0;
 let lastRotateKick = false, lastActionRotate = false;
 let cell = 24, dpr = 1;
 
-try{ best = parseInt(localStorage.getItem('tetris.best') || '0', 10) || 0; }catch(e){}
+let ovView = 'start';           // start | over | records | paused
+let backView = 'start';         // 기록 화면에서 닫으면 돌아갈 곳
+let pendingEntry = null;        // 이름을 기다리는 기록
+let newEntryAt = -1;            // 방금 넣은 기록의 순위(강조용)
+
+/* ================= 기록 저장 ================= */
+const KEY_SCORES = 'tetris.scores', KEY_NAME = 'tetris.name', KEY_OLD_BEST = 'tetris.best';
+let scores = [];
+let lastName = '';
+
+function readStore(){
+  try{
+    const raw = localStorage.getItem(KEY_SCORES);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if(Array.isArray(parsed)){
+      scores = parsed.filter(function(s){
+        return s && typeof s.score === 'number' && isFinite(s.score);
+      }).map(function(s){
+        return {
+          name: String(s.name == null ? '' : s.name).slice(0, 8) || '이름 없음',
+          score: Math.max(0, Math.floor(s.score)),
+          lines: Math.max(0, Math.floor(s.lines || 0)),
+          level: Math.max(0, Math.floor(s.level || 0)),
+          at: Math.floor(s.at || 0)
+        };
+      });
+    }
+  }catch(e){ scores = []; }
+
+  try{ lastName = localStorage.getItem(KEY_NAME) || ''; }catch(e){ lastName = ''; }
+
+  /* 이름 없이 저장돼 있던 예전 최고 기록을 목록으로 옮겨 준다 */
+  try{
+    const old = parseInt(localStorage.getItem(KEY_OLD_BEST) || '0', 10) || 0;
+    if(old > 0 && !scores.some(function(s){ return s.score === old; })){
+      scores.push({ name:'이전 기록', score:old, lines:0, level:0, at:0 });
+      sortScores();
+      writeStore();
+    }
+  }catch(e){}
+
+  sortScores();
+}
+function sortScores(){
+  scores.sort(function(a, b){ return b.score - a.score || a.at - b.at; });
+  if(scores.length > MAX_SCORES) scores.length = MAX_SCORES;
+}
+function writeStore(){
+  try{ localStorage.setItem(KEY_SCORES, JSON.stringify(scores)); }catch(e){}
+}
+function bestScore(){ return scores.length ? scores[0].score : 0; }
+function qualifies(v){
+  return v > 0 && (scores.length < MAX_SCORES || v > scores[scores.length - 1].score);
+}
 
 /* ================= 판 ================= */
 function emptyGrid(){
@@ -418,14 +508,13 @@ function gravityMs(){
 function gameOver(){
   state = 'over';
   piece = null;
-  if(score > best){
-    best = score;
-    try{ localStorage.setItem('tetris.best', String(best)); }catch(e){}
-  }
+  softHeld = false;
   updateHud();
-  showOverlay('게임 오버',
-    '점수 ' + fmt(score) + '\n최고 기록 ' + fmt(best) + '\n' + lines + '줄 · 레벨 ' + level,
-    '', '다시 하기');
+  newEntryAt = -1;
+  pendingEntry = qualifies(score)
+    ? { score: score, lines: lines, level: level, at: Date.now() }
+    : null;
+  showOver();
 }
 
 function reset(){
@@ -455,15 +544,126 @@ function showToast(text){
   toastEl.classList.add('on');
 }
 
-function showOverlay(title, scoreText, sub, btn){
-  $('ov-title').textContent = title;
-  $('ov-score').textContent = scoreText || '';
-  $('ov-sub').textContent = sub || '';
-  $('btn-start').textContent = btn || '시작';
+/* ---- 오버레이 ---- */
+const HELP = '보드를 좌우로 쓸어서 옮기고, 톡 누르면 회전.\n아래로 쓸면 내려오고, 빠르게 쓸면 바로 내림.';
+
+function setOverlay(o){
+  ovTitle.textContent = o.title;
+  ovScore.textContent = o.score || '';
+  ovScore.style.display = o.score ? '' : 'none';
+  ovSub.textContent = o.sub || '';
+  ovSub.style.display = o.sub ? '' : 'none';
+  ovForm.classList.toggle('show', !!o.form);
+  ovList.classList.toggle('show', !!o.list);
+  btnPrimary.textContent = o.primary;
+  btnSecond.textContent = o.secondary || '';
+  btnSecond.classList.toggle('hide', !o.secondary);
   overlayEl.classList.add('show');
 }
-function hideOverlay(){ overlayEl.classList.remove('show'); }
+function hideOverlay(){
+  overlayEl.classList.remove('show');
+  ovForm.classList.remove('show');
+  ovList.classList.remove('show');
+}
 
+function showStart(){
+  ovView = 'start';
+  const b = bestScore();
+  setOverlay({
+    title: '테트리스',
+    score: b ? '최고 기록 ' + fmt(b) + ' · ' + scores[0].name : '',
+    sub: HELP,
+    primary: '시작',
+    secondary: '기록'
+  });
+}
+
+function showOver(){
+  ovView = 'over';
+  if(pendingEntry) ovName.value = lastName;
+  setOverlay({
+    title: '게임 오버',
+    score: '점수 ' + fmt(score) + '\n' + lines + '줄 · 레벨 ' + level,
+    sub: pendingEntry ? '기록에 남길 이름을 적어 줘' : '',
+    form: !!pendingEntry,
+    primary: pendingEntry ? '기록 저장' : '다시 하기',
+    secondary: '기록'
+  });
+}
+
+function showPause(){
+  ovView = 'paused';
+  setOverlay({ title:'일시정지', score:'점수 ' + fmt(score), sub:HELP,
+               primary:'이어 하기', secondary:'기록' });
+}
+
+function showRecords(from){
+  backView = from;
+  ovView = 'records';
+  renderList();
+  setOverlay({ title:'기록', list:true, primary:'닫기' });
+}
+
+function renderList(){
+  while(ovList.firstChild) ovList.removeChild(ovList.firstChild);
+  if(!scores.length){
+    const e = document.createElement('div');
+    e.className = 'rank-empty';
+    e.textContent = '아직 기록이 없다';
+    ovList.appendChild(e);
+    return;
+  }
+  scores.forEach(function(s, i){
+    const row = document.createElement('div');
+    row.className = 'rank-row' + (i === newEntryAt ? ' is-new' : '');
+
+    const no = document.createElement('span');
+    no.className = 'rank-no';
+    no.textContent = String(i + 1);
+
+    const main = document.createElement('div');
+    main.className = 'rank-main';
+    const nm = document.createElement('span');
+    nm.className = 'rank-name';
+    nm.textContent = s.name;                       // textContent 라서 이름에 태그를 넣어도 글자로만 남는다
+    main.appendChild(nm);
+    const meta = document.createElement('span');
+    meta.className = 'rank-meta';
+    meta.textContent = s.at
+      ? s.lines + '줄 · ' + s.level + '레벨 · ' + dateText(s.at)
+      : '예전 기록';
+    main.appendChild(meta);
+
+    const sc = document.createElement('span');
+    sc.className = 'rank-score';
+    sc.textContent = fmt(s.score);
+
+    row.appendChild(no); row.appendChild(main); row.appendChild(sc);
+    ovList.appendChild(row);
+  });
+}
+
+function dateText(ms){
+  const d = new Date(ms);
+  return (d.getMonth() + 1) + '월 ' + d.getDate() + '일';
+}
+
+function saveEntry(){
+  if(!pendingEntry) return;
+  const nm = (ovName.value || '').trim().slice(0, 8) || '이름 없음';
+  lastName = nm;
+  try{ localStorage.setItem(KEY_NAME, nm); }catch(e){}
+  pendingEntry.name = nm;
+  scores.push(pendingEntry);
+  sortScores();
+  newEntryAt = scores.indexOf(pendingEntry);
+  writeStore();
+  pendingEntry = null;
+  ovName.blur();
+  showRecords('over');
+}
+
+/* ---- 캔버스 ---- */
 function roundRect(cx, x, y, w, h, r){
   const rr = Math.min(r, w/2, h/2);
   cx.beginPath();
@@ -485,8 +685,6 @@ function drawBlock(cx, px, py, size, color, alpha){
   cx.fill();
   cx.globalAlpha = 1;
 }
-
-/* 떨어질 자리는 같은 모양을 흐리게 깔아 준다 */
 function drawGhost(cx, px, py, size, color){
   drawBlock(cx, px, py, size, color, .22);
 }
@@ -539,7 +737,8 @@ function sizeCanvas(cv, cx, w, h){
 }
 
 /* 사파리는 주소창·툴바가 덮는 만큼 화면이 좁은데 100%는 덮이기 전 높이를 준다.
-   실제로 보이는 높이를 직접 재서 넣어 줘야 아래 버튼이 툴바 밑으로 숨지 않는다. */
+   실제로 보이는 높이를 직접 재서 넣어 줘야 아래가 툴바 밑으로 숨지 않는다.
+   이름을 칠 때 키보드가 올라오는 경우도 같은 값으로 따라간다. */
 function setAppHeight(){
   const vv = window.visualViewport;
   const h = Math.round((vv && vv.height) || window.innerHeight || 0);
@@ -595,38 +794,6 @@ function frame(t){
 }
 
 /* ================= 입력 ================= */
-function act(name){
-  if(state !== 'playing') return;
-  if(name === 'left') tryMove(-1, 0);
-  else if(name === 'right') tryMove(1, 0);
-  else if(name === 'soft'){ if(tryMove(0, 1)) score += 1; }
-  else if(name === 'rotate') tryRotate(1);
-  else if(name === 'ccw') tryRotate(-1);
-  else if(name === 'hard') hardDrop();
-}
-
-/* 화면 버튼. ↓는 누르고 있는 동안 계속 내려온다 */
-function releaseButtons(){
-  softHeld = false;
-  const held = document.querySelectorAll('.pad-btn.held');
-  for(let i=0;i<held.length;i++) held[i].classList.remove('held');
-}
-document.querySelectorAll('.pad-btn').forEach(function(btn){
-  const name = btn.dataset.act;
-  btn.addEventListener('pointerdown', function(e){
-    e.preventDefault();
-    try{ btn.setPointerCapture(e.pointerId); }catch(err){}
-    btn.classList.add('held');
-    if(name === 'soft') softHeld = true;
-    act(name);
-  });
-  btn.addEventListener('pointerup', function(e){ e.preventDefault(); releaseButtons(); });
-  btn.addEventListener('pointercancel', function(){ releaseButtons(); });
-});
-/* 손가락이 버튼 밖에서 떨어져도 확실히 멈춘다 */
-window.addEventListener('pointerup', releaseButtons);
-window.addEventListener('pointercancel', releaseButtons);
-
 /* 보드 위 스와이프 / 탭 */
 (function(){
   let sx=0, sy=0, lx=0, ly=0, st=0, accX=0, accY=0, dir=null, active=false;
@@ -653,6 +820,8 @@ window.addEventListener('pointercancel', releaseButtons);
         accX -= s * step;
       }
     }else if(dir === 'v' && dy > 0){
+      /* 아래로 쓸고 있는 동안은 손가락을 멈춰도 계속 내려온다 */
+      softHeld = true;
       accY += e.clientY - ly;
       const step = Math.max(14, cell * 0.8);
       while(accY >= step){
@@ -665,6 +834,7 @@ window.addEventListener('pointercancel', releaseButtons);
   function end(e){
     if(!active) return;
     active = false;
+    softHeld = false;
     if(state !== 'playing') return;
     const dt = performance.now() - st;
     const dx = e.clientX - sx, dy = e.clientY - sy;
@@ -672,27 +842,32 @@ window.addEventListener('pointercancel', releaseButtons);
     else if(dir === 'v' && dy > 60 && dt < 280) hardDrop();
   }
   wrapEl.addEventListener('pointerup', end);
-  wrapEl.addEventListener('pointercancel', function(){ active = false; });
+  wrapEl.addEventListener('pointercancel', function(){ active = false; softHeld = false; });
 })();
 
 /* 키보드 */
 const keyHeld = {};
 document.addEventListener('keydown', function(e){
+  const tag = e.target && e.target.tagName;
+  if(tag === 'INPUT'){                       // 이름을 치는 중에는 게임 단축키가 끼어들지 않는다
+    if(e.key === 'Enter' && ovView === 'over' && pendingEntry) saveEntry();
+    return;
+  }
   const k = e.key;
   if(['ArrowLeft','ArrowRight','ArrowDown','ArrowUp',' '].indexOf(k) >= 0) e.preventDefault();
   if(k === 'p' || k === 'P' || k === 'Escape'){ togglePause(); return; }
-  if(state === 'ready' || state === 'over'){
-    if(k === 'Enter' || k === ' ') startGame();
+  if(state !== 'playing'){
+    if(k === 'Enter' || k === ' ') btnPrimary.click();
     return;
   }
   if(keyHeld[k]) return;
   keyHeld[k] = true;
-  if(k === 'ArrowLeft') act('left');
-  else if(k === 'ArrowRight') act('right');
-  else if(k === 'ArrowDown'){ softHeld = true; act('soft'); }
-  else if(k === 'ArrowUp' || k === 'x' || k === 'X') act('rotate');
-  else if(k === 'z' || k === 'Z') act('ccw');
-  else if(k === ' ') act('hard');
+  if(k === 'ArrowLeft') tryMove(-1, 0);
+  else if(k === 'ArrowRight') tryMove(1, 0);
+  else if(k === 'ArrowDown'){ softHeld = true; if(tryMove(0, 1)) score += 1; }
+  else if(k === 'ArrowUp' || k === 'x' || k === 'X') tryRotate(1);
+  else if(k === 'z' || k === 'Z') tryRotate(-1);
+  else if(k === ' ') hardDrop();
 });
 document.addEventListener('keyup', function(e){
   keyHeld[e.key] = false;
@@ -700,10 +875,10 @@ document.addEventListener('keyup', function(e){
 });
 
 /* ================= 버튼 · 생명주기 ================= */
-const HELP = '보드를 좌우로 쓸어서 옮기고, 톡 누르면 회전.\n아래로 쓸면 내려오고, 빠르게 쓸면 바로 내림.\n↓는 누르고 있으면 계속 내려온다.';
-
 function startGame(){
   hideOverlay();
+  newEntryAt = -1;
+  pendingEntry = null;
   reset();
 }
 
@@ -711,18 +886,29 @@ function togglePause(){
   if(state === 'playing'){
     state = 'paused';
     softHeld = false;
-    showOverlay('일시정지', '점수 ' + fmt(score), HELP, '이어 하기');
-  }else if(state === 'paused'){
+    showPause();
+  }else if(state === 'paused' || (ovView === 'records' && backView === 'paused')){
     hideOverlay();
     state = 'playing';
+    ovView = 'paused';
     last = 0;
   }
 }
 
-$('btn-start').addEventListener('click', function(){
-  if(state === 'paused') togglePause();
-  else startGame();
+btnPrimary.addEventListener('click', function(){
+  if(ovView === 'records'){
+    if(backView === 'paused') togglePause();
+    else if(backView === 'over') showOver();
+    else showStart();
+    return;
+  }
+  if(ovView === 'paused'){ togglePause(); return; }
+  if(ovView === 'over' && pendingEntry){ saveEntry(); return; }
+  startGame();
 });
+
+btnSecond.addEventListener('click', function(){ showRecords(ovView); });
+
 $('btn-pause').addEventListener('click', function(){
   if(state === 'playing' || state === 'paused') togglePause();
 });
@@ -742,13 +928,14 @@ document.addEventListener('gesturestart', function(e){ e.preventDefault(); });
 document.addEventListener('dblclick', function(e){ e.preventDefault(); });
 
 /* ================= 시작 ================= */
+readStore();
 grid = emptyGrid();
 fillQueue();
 updateHud();
 layout();
 setTimeout(layout, 60);
 setTimeout(layout, 400);   /* 사파리가 툴바 높이를 늦게 알려 주는 경우가 있다 */
-showOverlay('테트리스', best ? '최고 기록 ' + fmt(best) : '', HELP, '시작');
+showStart();
 requestAnimationFrame(frame);
 
 })();
