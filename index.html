@@ -101,6 +101,12 @@
   #ov-sub{ font-size:12.5px; color:#a0a7d6; line-height:1.9; white-space:pre-line; flex:0 0 auto;
            display:inline-block; text-align:left; }
 
+  /* 조작법 애니메이션 */
+  #ov-guide{ display:none; flex:0 0 auto; }
+  #ov-guide.show{ display:block; }
+  #ov-demo{ display:block; margin:0 auto; }
+  #ov-demo-cap{ font-size:12.5px; color:#b6bdea; margin-top:5px; min-height:17px; }
+
   /* 이름 입력 */
   #ov-form{ display:none; flex:0 0 auto; }
   #ov-form.show{ display:block; }
@@ -168,6 +174,10 @@
     <div id="ov-title">테트리스</div>
     <div id="ov-score"></div>
     <div id="ov-sub"></div>
+    <div id="ov-guide">
+      <canvas id="ov-demo" aria-hidden="true"></canvas>
+      <div id="ov-demo-cap"></div>
+    </div>
     <div id="ov-form">
       <input id="ov-name" type="text" maxlength="8" placeholder="이름"
              autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
@@ -253,6 +263,8 @@ const toastEl = $('toast');
 const ovTitle = $('ov-title'), ovScore = $('ov-score'), ovSub = $('ov-sub');
 const ovForm = $('ov-form'), ovName = $('ov-name'), ovList = $('ov-list');
 const ovBg = $('ov-bg'), ovBgCx = ovBg.getContext('2d');
+const ovGuide = $('ov-guide'), demoCv = $('ov-demo'), demoCx = demoCv.getContext('2d');
+const demoCap = $('ov-demo-cap');
 const btnPrimary = $('btn-primary'), btnSecond = $('btn-second');
 
 /* ================= 상태 ================= */
@@ -583,6 +595,7 @@ function setOverlay(o){
   ovSub.style.display = o.sub ? '' : 'none';
   ovForm.classList.toggle('show', !!o.form);
   ovList.classList.toggle('show', !!o.list);
+  ovGuide.classList.toggle('show', !!o.guide);
   btnPrimary.textContent = o.primary;
   btnSecond.textContent = o.secondary || '';
   btnSecond.classList.toggle('hide', !o.secondary);
@@ -592,21 +605,23 @@ function hideOverlay(){
   overlayEl.classList.remove('show');
   ovForm.classList.remove('show');
   ovList.classList.remove('show');
+  ovGuide.classList.remove('show');
 }
 
 /* 홈. 최근 기록 열 개를 그대로 펼쳐 보여 준다.
    하던 판이 있으면(홈 버튼으로 빠져나온 경우) 이어 하기와 새 게임을 같이 준다. */
+/* 홈은 언제 와도 처음 켰을 때와 똑같다. 조작법 애니메이션, 기록, 시작 버튼. */
 function showHome(){
   ovView = 'home';
+  state = 'ready';
+  piece = null;
+  grid = emptyGrid();          /* 뒤에 하던 판이 남아 보이지 않게 */
   renderList();
-  const resting = (state === 'paused');
   setOverlay({
     title: '테트리스',
-    score: resting ? '하던 판 · 점수 ' + fmt(score) : '',
-    sub: HELP,
+    guide: true,
     list: true,
-    primary: resting ? '이어 하기' : '시작',
-    secondary: resting ? '새 게임' : ''
+    primary: '시작'
   });
 }
 
@@ -635,7 +650,7 @@ function showConfirmHome(){
   setOverlay({
     title: '홈으로',
     score: '시작 화면으로 가시겠습니까?',
-    sub: '하던 판은 홈에서 이어서 하실 수 있어요.',
+    sub: '하던 판은 사라집니다.',
     primary: '예',
     secondary: '아니오'
   });
@@ -832,6 +847,127 @@ function drawFloats(){
   ovBgCx.globalAlpha = 1;
 }
 
+/* ---- 조작법 애니메이션 ----
+   작은 판에서 조각을 실제로 옮기고 돌리고 떨어뜨려 보여 준다.
+   한 장면씩 2.1초, 아래 한 줄로 무엇을 하는 중인지 적어 준다. */
+const DEMO_MS = 2100;
+const DEMO_CAPS = [
+  '좌우로 쓸면 옮겨집니다',
+  '톡 누르면 돌아갑니다',
+  '꾹 누르면 내려갑니다',
+  '아래로 훅 쓸면 바로 내려갑니다'
+];
+const DEMO_COLS = 7, DEMO_ROWS = 4;
+let demoT = 0, demoScene = -1, demoW = 0, demoH = 0, demoCell = 0;
+
+function sizeDemo(){
+  const w = Math.max(180, Math.min(290, overlayEl.clientWidth - 40)), h = 96;
+  if(w === demoW && h === demoH) return;
+  demoW = w; demoH = h;
+  sizeCanvas(demoCv, demoCx, w, h);
+  demoCell = Math.floor(Math.min(w / DEMO_COLS, h / DEMO_ROWS));
+}
+
+function easeInOut(t){ return t < .5 ? 2*t*t : 1 - Math.pow(-2*t + 2, 2) / 2; }
+
+function demoBlocks(kind, rot, px, py, ox, oy, c, alpha){
+  const m = STATES[kind][rot & 3];
+  for(let y=0;y<m.length;y++) for(let x=0;x<m.length;x++){
+    if(m[y][x]) drawBlock(demoCx, ox + (px + x) * c, oy + (py + y) * c, c, COLORS[kind], alpha);
+  }
+}
+function demoFinger(x, y, ring, ringAlpha){
+  demoCx.globalAlpha = .9;
+  demoCx.fillStyle = 'rgba(255,255,255,.92)';
+  demoCx.beginPath(); demoCx.arc(x, y, 6, 0, Math.PI*2); demoCx.fill();
+  if(ring > 6){
+    demoCx.globalAlpha = ringAlpha == null ? .4 : ringAlpha;
+    demoCx.strokeStyle = '#ffffff';
+    demoCx.lineWidth = 1.6;
+    demoCx.beginPath(); demoCx.arc(x, y, ring, 0, Math.PI*2); demoCx.stroke();
+  }
+  demoCx.globalAlpha = 1;
+}
+
+function drawDemo(dt){
+  sizeDemo();
+  if(!demoCell) return;
+  if(!REDUCED) demoT += dt;
+
+  const scene = Math.floor(demoT / DEMO_MS) % DEMO_CAPS.length;
+  const local = demoT % DEMO_MS;
+  if(scene !== demoScene){ demoScene = scene; demoCap.textContent = DEMO_CAPS[scene]; }
+
+  const c = demoCell, gw = DEMO_COLS * c, gh = DEMO_ROWS * c;
+  const ox = (demoW - gw) / 2, oy = (demoH - gh) / 2;
+
+  demoCx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  demoCx.clearRect(0, 0, demoW, demoH);
+
+  /* 칸 모서리에 점을 찍어 판처럼 보이게 하고, 바닥에 선을 긋는다 */
+  demoCx.fillStyle = 'rgba(160,170,255,.16)';
+  for(let x=0;x<=DEMO_COLS;x++) for(let y=0;y<=DEMO_ROWS;y++){
+    demoCx.fillRect(ox + x*c - .5, oy + y*c - .5, 1, 1);
+  }
+  demoCx.strokeStyle = 'rgba(160,170,255,.22)';
+  demoCx.lineWidth = 1;
+  demoCx.beginPath();
+  demoCx.moveTo(ox, oy + gh - .5); demoCx.lineTo(ox + gw, oy + gh - .5);
+  demoCx.stroke();
+
+  const kind = 'T', floor = DEMO_ROWS - 2;
+
+  if(scene === 0){                                   /* 좌우로 쓸기 */
+    const t = Math.min(1, local / 1600);
+    const tri = t < .5 ? easeInOut(t / .5) : 1 - easeInOut((t - .5) / .5);
+    const px = 1 + tri * 3;
+    demoBlocks(kind, 0, px, 1, ox, oy, c, 1);
+    const fx = ox + (px + 1.5) * c, fy = oy + gh - c * 0.45;
+    demoCx.globalAlpha = .3;
+    demoCx.strokeStyle = '#fff'; demoCx.lineWidth = 1.4;
+    demoCx.beginPath(); demoCx.moveTo(ox + 1.5*c, fy); demoCx.lineTo(ox + 5.5*c, fy); demoCx.stroke();
+    demoCx.globalAlpha = 1;
+    demoFinger(fx, fy, 11, .35);
+
+  }else if(scene === 1){                             /* 톡 눌러 회전 */
+    const step = Math.floor(local / 520), sub = (local % 520) / 520;
+    demoBlocks(kind, step % 4, 2, 1, ox, oy, c, 1);
+    const fx = ox + 3.5 * c, fy = oy + 2.5 * c;
+    const grow = Math.min(1, sub / .38);
+    demoFinger(fx, fy, 6 + grow * 16, (1 - grow) * .5);
+
+  }else if(scene === 2){                             /* 꾹 눌러 내리기 */
+    const t = Math.min(1, local / 1700);
+    const py = t * t * floor;
+    demoBlocks(kind, 0, 2, 0, ox, oy, c, .16);       /* 출발 자리 */
+    demoBlocks(kind, 0, 2, py, ox, oy, c, 1);
+    const fx = ox + 3.5 * c, fy = oy + gh - c * 0.45;
+    demoFinger(fx, fy, 8 + t * 13, .25 + t * .35);
+
+  }else{                                             /* 아래로 훅 쓸기 */
+    const swipe = Math.min(1, local / 340);
+    const dropped = local > 340;
+    demoBlocks(kind, 0, 2, dropped ? floor : 0, ox, oy, c, 1);
+    if(!dropped){
+      demoBlocks(kind, 0, 2, floor, ox, oy, c, .16);
+      const fx = ox + 3.5 * c;
+      const y0 = oy + 0.9 * c, y1 = oy + gh - c * 0.45;
+      const fy = y0 + (y1 - y0) * swipe;
+      demoCx.globalAlpha = .28;
+      demoCx.strokeStyle = '#fff'; demoCx.lineWidth = 2;
+      demoCx.beginPath(); demoCx.moveTo(fx, y0); demoCx.lineTo(fx, fy); demoCx.stroke();
+      demoCx.globalAlpha = 1;
+      demoFinger(fx, fy, 10, .3);
+    }else if(local < 560){
+      const f = 1 - (local - 340) / 220;
+      demoCx.globalAlpha = f * .5;
+      demoCx.fillStyle = '#ffffff';
+      demoCx.fillRect(ox, oy + gh - c * 0.18, gw, c * 0.18);
+      demoCx.globalAlpha = 1;
+    }
+  }
+}
+
 function clearFloats(){
   if(!bgW) return;
   ovBgCx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -909,6 +1045,7 @@ function frame(t){
     if(ovView === 'home'){
       if(!REDUCED) stepFloats(dt);
       drawFloats();
+      drawDemo(dt);
     }else{
       clearFloats();
     }
@@ -1043,29 +1180,22 @@ function togglePause(){
   else if(state === 'paused') resumeGame();
 }
 
-/* 홈으로. 하던 판은 멈춰 둘 뿐 버리지 않는다 */
-function goHome(){
-  pauseGame();
-  showHome();
-}
-
 btnPrimary.addEventListener('click', function(){
-  if(ovView === 'confirm'){ showHome(); return; }          // 예
+  if(ovView === 'confirm'){ showHome(); return; }          // 예 -> 시작 화면
   if(ovView === 'paused'){ resumeGame(); return; }
-  if(ovView === 'home' && state === 'paused'){ resumeGame(); return; }
   if(ovView === 'over' && pendingEntry){ saveEntry(); return; }
   startGame();
 });
 
 btnSecond.addEventListener('click', function(){
   if(ovView === 'confirm'){ resumeGame(); return; }        // 아니오 -> 이어서
-  if(ovView === 'home'){ startGame(); return; }            // 새 게임
-  goHome();                                                // 일시정지 · 게임 오버에서 홈으로
+  if(ovView === 'paused'){ showConfirmHome(); return; }     // 홈 (한 번 되묻는다)
+  showHome();                                              // 게임 오버에서 홈으로
 });
 
 $('btn-home').addEventListener('click', function(){
   if(state === 'playing'){ pauseGame(); showConfirmHome(); }
-  else goHome();
+  else showHome();
 });
 
 document.addEventListener('visibilitychange', function(){
