@@ -41,19 +41,23 @@
   /* ---------- 점수 줄 ---------- */
   #hud{ display:flex; align-items:center; gap:5px; flex:0 0 auto; }
   .stat{
-    flex:1 1 0; min-width:0; padding:4px 8px; border-radius:11px;
+    flex:1 1 0; min-width:0; padding:3px 8px; border-radius:10px;
     background:rgba(255,255,255,.04); border:1px solid rgba(160,170,255,.12);
   }
   .stat .k{ display:block; font-size:9px; letter-spacing:.1em; color:#8990c0; }
-  .stat .v{ display:block; font-size:15px; font-weight:700; font-variant-numeric:tabular-nums;
+  .stat .v{ display:block; font-size:14px; font-weight:700; font-variant-numeric:tabular-nums;
             white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  #btn-pause{
-    flex:0 0 auto; width:36px; height:36px; border-radius:11px; font-size:14px; line-height:1;
-    background:rgba(255,255,255,.04); border:1px solid rgba(160,170,255,.14); color:#e9ecff;
-    display:flex; align-items:center; justify-content:center; padding:0;
+
+  /* ---------- 오른쪽 아래 버튼 ---------- */
+  #bar{ flex:0 0 auto; display:flex; justify-content:flex-end; align-items:center; gap:8px; }
+  .bar-btn{
+    min-width:56px; height:32px; padding:0 12px; border-radius:10px;
+    font-size:13px; font-weight:600; line-height:1; color:#b6bdea;
+    background:rgba(255,255,255,.045); border:1px solid rgba(160,170,255,.16);
+    display:flex; align-items:center; justify-content:center;
     transition:transform .1s ease, background-color .15s ease;
   }
-  #btn-pause:active{ transform:scale(.92); background:rgba(255,255,255,.1); }
+  .bar-btn:active{ transform:scale(.93); background:rgba(255,255,255,.1); }
 
   /* ---------- 보드 ---------- */
   #stage{ flex:1 1 auto; min-height:0; display:flex; align-items:center; justify-content:center; }
@@ -142,7 +146,6 @@
     <div class="stat"><span class="k">점수</span><span class="v" id="ui-score">0</span></div>
     <div class="stat"><span class="k">레벨</span><span class="v" id="ui-level">1</span></div>
     <div class="stat"><span class="k">줄</span><span class="v" id="ui-lines">0</span></div>
-    <button id="btn-pause" aria-label="일시정지">⏸</button>
   </header>
 
   <div id="stage">
@@ -150,6 +153,11 @@
       <canvas id="cv-board"></canvas>
       <div id="toast"></div>
     </div>
+  </div>
+
+  <div id="bar">
+    <button class="bar-btn" id="btn-home">홈</button>
+    <button class="bar-btn" id="btn-pause" aria-label="일시정지">⏸ 정지</button>
   </div>
 
   <div id="overlay" class="show">
@@ -248,8 +256,7 @@ let clearRows = [], clearTimer = 0;
 let lastRotateKick = false, lastActionRotate = false;
 let cell = 24, dpr = 1;
 
-let ovView = 'start';           // start | over | records | paused
-let backView = 'start';         // 기록 화면에서 닫으면 돌아갈 곳
+let ovView = 'home';            // home | over | paused
 let pendingEntry = null;        // 이름을 기다리는 기록
 let newEntryAt = -1;            // 방금 넣은 기록의 순위(강조용)
 
@@ -545,7 +552,7 @@ function showToast(text){
 }
 
 /* ---- 오버레이 ---- */
-const HELP = '보드를 좌우로 쓸어서 옮기고, 톡 누르면 회전.\n아래로 쓸면 내려오고, 빠르게 쓸면 바로 내림.';
+const HELP = '보드를 좌우로 쓸어서 옮기고, 톡 누르면 회전.\n톡톡 두 번 누르면 바로 내림. 아래로 쓸면 천천히.';
 
 function setOverlay(o){
   ovTitle.textContent = o.title;
@@ -566,15 +573,19 @@ function hideOverlay(){
   ovList.classList.remove('show');
 }
 
-function showStart(){
-  ovView = 'start';
-  const b = bestScore();
+/* 홈. 최근 기록 열 개를 그대로 펼쳐 보여 준다.
+   하던 판이 있으면(홈 버튼으로 빠져나온 경우) 이어 하기와 새 게임을 같이 준다. */
+function showHome(){
+  ovView = 'home';
+  renderList();
+  const resting = (state === 'paused');
   setOverlay({
     title: '테트리스',
-    score: b ? '최고 기록 ' + fmt(b) + ' · ' + scores[0].name : '',
+    score: resting ? '하던 판 · 점수 ' + fmt(score) : '',
     sub: HELP,
-    primary: '시작',
-    secondary: '기록'
+    list: true,
+    primary: resting ? '이어 하기' : '시작',
+    secondary: resting ? '새 게임' : ''
   });
 }
 
@@ -587,21 +598,14 @@ function showOver(){
     sub: pendingEntry ? '기록에 남길 이름을 적어 줘' : '',
     form: !!pendingEntry,
     primary: pendingEntry ? '기록 저장' : '다시 하기',
-    secondary: '기록'
+    secondary: '홈'
   });
 }
 
 function showPause(){
   ovView = 'paused';
   setOverlay({ title:'일시정지', score:'점수 ' + fmt(score), sub:HELP,
-               primary:'이어 하기', secondary:'기록' });
-}
-
-function showRecords(from){
-  backView = from;
-  ovView = 'records';
-  renderList();
-  setOverlay({ title:'기록', list:true, primary:'닫기' });
+               primary:'이어 하기', secondary:'홈' });
 }
 
 function renderList(){
@@ -660,7 +664,7 @@ function saveEntry(){
   writeStore();
   pendingEntry = null;
   ovName.blur();
-  showRecords('over');
+  showHome();          // 저장하면 기록이 펼쳐진 홈으로 간다
 }
 
 /* ---- 캔버스 ---- */
@@ -831,14 +835,34 @@ function frame(t){
     }
     lx = e.clientX; ly = e.clientY;
   });
+  /* 톡 한 번은 회전, 아주 빠르게 톡톡 두 번은 바로 내림.
+     두 번째 톡이 오면 첫 번째 톡이 돌려 놓은 것을 되돌리고 떨어뜨린다. */
+  let tapAt = 0, tapX = 0, tapY = 0, tapPiece = null, tapSnap = null;
+  function onTap(x, y){
+    const now = performance.now();
+    const twice = (now - tapAt) < 300 && Math.abs(x - tapX) < 44 && Math.abs(y - tapY) < 44;
+    if(twice){
+      tapAt = 0;
+      if(tapPiece === piece && tapSnap){
+        piece.rot = tapSnap.rot; piece.x = tapSnap.x; piece.y = tapSnap.y;
+      }
+      hardDrop();
+      return;
+    }
+    tapPiece = piece;
+    tapSnap = { rot: piece.rot, x: piece.x, y: piece.y };
+    tryRotate(1);
+    tapAt = now; tapX = x; tapY = y;
+  }
+
   function end(e){
     if(!active) return;
     active = false;
     softHeld = false;
-    if(state !== 'playing') return;
+    if(state !== 'playing' || !piece) return;
     const dt = performance.now() - st;
     const dx = e.clientX - sx, dy = e.clientY - sy;
-    if(dir === null && dt < 320 && Math.abs(dx) < 10 && Math.abs(dy) < 10) tryRotate(1);
+    if(dir === null && dt < 320 && Math.abs(dx) < 10 && Math.abs(dy) < 10) onTap(e.clientX, e.clientY);
     else if(dir === 'v' && dy > 60 && dt < 280) hardDrop();
   }
   wrapEl.addEventListener('pointerup', end);
@@ -882,36 +906,42 @@ function startGame(){
   reset();
 }
 
+function pauseGame(){
+  if(state !== 'playing') return;
+  state = 'paused';
+  softHeld = false;
+}
+function resumeGame(){
+  if(state !== 'paused') return;
+  hideOverlay();
+  state = 'playing';
+  last = 0;
+}
 function togglePause(){
-  if(state === 'playing'){
-    state = 'paused';
-    softHeld = false;
-    showPause();
-  }else if(state === 'paused' || (ovView === 'records' && backView === 'paused')){
-    hideOverlay();
-    state = 'playing';
-    ovView = 'paused';
-    last = 0;
-  }
+  if(state === 'playing'){ pauseGame(); showPause(); }
+  else if(state === 'paused') resumeGame();
+}
+
+/* 홈으로. 하던 판은 멈춰 둘 뿐 버리지 않는다 */
+function goHome(){
+  pauseGame();
+  showHome();
 }
 
 btnPrimary.addEventListener('click', function(){
-  if(ovView === 'records'){
-    if(backView === 'paused') togglePause();
-    else if(backView === 'over') showOver();
-    else showStart();
-    return;
-  }
-  if(ovView === 'paused'){ togglePause(); return; }
+  if(ovView === 'paused'){ resumeGame(); return; }
+  if(ovView === 'home' && state === 'paused'){ resumeGame(); return; }
   if(ovView === 'over' && pendingEntry){ saveEntry(); return; }
   startGame();
 });
 
-btnSecond.addEventListener('click', function(){ showRecords(ovView); });
-
-$('btn-pause').addEventListener('click', function(){
-  if(state === 'playing' || state === 'paused') togglePause();
+btnSecond.addEventListener('click', function(){
+  if(ovView === 'home') startGame();      // 새 게임
+  else goHome();                          // 일시정지 · 게임 오버에서 홈으로
 });
+
+$('btn-home').addEventListener('click', goHome);
+$('btn-pause').addEventListener('click', togglePause);
 
 document.addEventListener('visibilitychange', function(){
   if(document.hidden && state === 'playing') togglePause();
@@ -935,7 +965,7 @@ updateHud();
 layout();
 setTimeout(layout, 60);
 setTimeout(layout, 400);   /* 사파리가 툴바 높이를 늦게 알려 주는 경우가 있다 */
-showStart();
+showHome();
 requestAnimationFrame(frame);
 
 })();
