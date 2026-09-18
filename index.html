@@ -462,7 +462,7 @@ function scoreFor(n, spin){
   if(n > 0){
     combo++;
     if(combo > 0){ gain += 50 * combo * L; msg += ' ' + (combo + 1) + '콤보'; }
-  }else if(!spin){
+  }else{
     combo = -1;
   }
 
