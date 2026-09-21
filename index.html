@@ -64,7 +64,21 @@
   #btn-home{ flex:0 0 52px; font-size:20px; }
 
   /* ---------- 보드 ---------- */
-  #stage{ flex:1 1 auto; min-height:0; display:flex; align-items:center; justify-content:center; }
+  #stage{ flex:1 1 auto; min-height:0; display:flex; align-items:center; justify-content:center; gap:6px; }
+
+  /* 대전할 때 오른쪽에 붙는 상대 화면 */
+  #opp{ display:none; flex:0 0 auto; flex-direction:column; align-items:stretch; gap:3px; }
+  #opp.show{ display:flex; }
+  #opp-name{ font-size:10px; font-weight:700; color:#c6cbf2; letter-spacing:.04em;
+             white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #opp-score{ font-size:12px; font-weight:800; color:#fff; font-variant-numeric:tabular-nums; }
+  #cv-opp{ display:block; border-radius:8px; background:#0a0a13;
+           box-shadow:0 0 0 1px rgba(255,255,255,.28); }
+  #opp-note{ font-size:9.5px; color:#ef6f7b; min-height:12px; }
+  /* 방해 줄이 날아올 때 보드 옆에 쌓이는 표시 */
+  #warn{ position:absolute; left:-5px; top:0; bottom:0; width:4px; border-radius:3px;
+         background:linear-gradient(to top, #ef6f7b, #f2994a); opacity:0; transform-origin:bottom;
+         transition:opacity .15s ease, transform .15s ease; pointer-events:none; }
   #board-wrap{ position:relative; flex:0 0 auto; }
   #cv-board{
     display:block; border-radius:14px; background:#0a0a13;
@@ -138,6 +152,19 @@
   .rank-row.is-new .rank-score{ color:#c4a8ff; }
   .rank-empty{ font-size:12px; color:#8990c0; text-align:center; padding:18px 0; }
 
+  /* 방 번호 */
+  #ov-room{ display:none; flex:0 0 auto; }
+  #ov-room.show{ display:block; }
+  #ov-code{
+    width:200px; padding:10px 12px; border-radius:11px; text-align:center;
+    font-size:26px; font-weight:800; letter-spacing:.32em; text-indent:.32em;
+    font-family:inherit; font-variant-numeric:tabular-nums; color:#fff;
+    background:rgba(255,255,255,.09); border:1px solid rgba(255,255,255,.45);
+    -webkit-user-select:text; user-select:text; touch-action:manipulation;
+  }
+  #ov-code:focus{ outline:none; border-color:rgba(167,139,250,.75); background:rgba(255,255,255,.12); }
+  #ov-code[readonly]{ border-style:dashed; }
+
   #ov-actions{ display:flex; align-items:center; gap:10px; flex:0 0 auto; margin-top:2px; }
   .primary-btn{
     padding:11px 28px; border-radius:999px; font-size:15px; font-weight:700; color:#0a0a14;
@@ -152,6 +179,11 @@
   }
   .ghost-btn:active{ transform:scale(.95); background:rgba(255,255,255,.07); }
   .ghost-btn.hide{ display:none; }
+  .link-btn{
+    background:none; border:0; padding:6px 10px; font-size:12px; color:#9aa1cf;
+    text-decoration:underline; text-underline-offset:3px; flex:0 0 auto;
+  }
+  .link-btn.hide{ display:none; }
 </style>
 </head>
 <body>
@@ -165,8 +197,15 @@
   <div id="stage">
     <div id="board-wrap">
       <canvas id="cv-board"></canvas>
+      <div id="warn"></div>
       <div id="toast"></div>
     </div>
+    <aside id="opp">
+      <div id="opp-name">상대</div>
+      <div id="opp-score">0</div>
+      <canvas id="cv-opp"></canvas>
+      <div id="opp-note"></div>
+    </aside>
   </div>
 
   <div id="bar">
@@ -192,11 +231,17 @@
              autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
              enterkeyhint="done" aria-label="기록에 남길 이름">
     </div>
+    <div id="ov-room">
+      <input id="ov-code" type="text" inputmode="numeric" maxlength="6" placeholder="------"
+             autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+             enterkeyhint="done" aria-label="방 번호 여섯 자리">
+    </div>
     <div id="ov-list"></div>
     <div id="ov-actions">
       <button class="primary-btn" id="btn-primary">시작</button>
       <button class="ghost-btn" id="btn-second">기록</button>
     </div>
+    <button class="link-btn hide" id="btn-third"></button>
   </div>
 </div>
 
@@ -216,8 +261,14 @@ const MAX_SCORES = 10;              /* 기록표에 남기는 개수 */
 
 const COLORS = {
   I:'#4ecdc4', J:'#5b8dee', L:'#f2994a', O:'#f2c94c',
-  S:'#6fcf97', T:'#a97bf0', Z:'#ef6f7b'
+  S:'#6fcf97', T:'#a97bf0', Z:'#ef6f7b',
+  G:'#5d6483'                       /* 상대가 보낸 방해 줄 */
 };
+
+/* 대전: 한 번에 지운 줄 수 -> 상대에게 보내는 방해 줄 수 */
+const GARBAGE = [0, 0, 1, 2, 4];
+const BOARD_EVERY = 160;            /* 내 판을 상대에게 알려 주는 간격(ms) */
+const DROP_TIMEOUT = 9000;          /* 이만큼 소식이 없으면 끊긴 것으로 본다 */
 
 const BASE = {
   I:[[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],
@@ -274,7 +325,10 @@ const ovForm = $('ov-form'), ovName = $('ov-name'), ovList = $('ov-list');
 const ovBg = $('ov-bg'), ovBgCx = ovBg.getContext('2d');
 const ovGuide = $('ov-guide'), demoCv = $('ov-demo'), demoCx = demoCv.getContext('2d');
 const demoCap = $('ov-demo-cap');
-const btnPrimary = $('btn-primary'), btnSecond = $('btn-second');
+const btnPrimary = $('btn-primary'), btnSecond = $('btn-second'), btnThird = $('btn-third');
+const ovRoom = $('ov-room'), ovCode = $('ov-code');
+const oppEl = $('opp'), oppCv = $('cv-opp'), oppCx = oppCv.getContext('2d');
+const warnEl = $('warn');
 
 /* ================= 상태 ================= */
 let grid, piece, bag;
@@ -287,8 +341,17 @@ let clearRows = [], clearTimer = 0;
 let lastRotateKick = false, lastActionRotate = false;
 let cell = 24, dpr = 1;
 
-let ovView = 'home';            // home | over | paused | confirm
+let ovView = 'home';            // home | over | paused | confirm | lobby | wait | result
 let confirmKind = 'home';       // confirm 화면이 무엇을 묻는 중인지: home | wipe
+
+/* ---- 대전 ---- */
+let mode = 'solo';              // solo | versus
+let net = null, roomCode = '';
+let oppName = '', oppCells = null, oppScore = 0, oppAlive = true, oppSeen = 0;
+let iAmHost = false, oppHere = false, roundOn = false;
+let pendingGarbage = 0;         // 내 판에 쌓일 차례를 기다리는 방해 줄
+let sentBoardAt = 0, countdownAt = 0, countdownShown = 0;
+let resultText = '';
 let pendingEntry = null;        // 이름을 기다리는 기록
 let newEntryAt = -1;            // 방금 넣은 기록의 순위(강조용)
 
@@ -347,6 +410,142 @@ function bestScore(){ return scores.length ? scores[0].score : 0; }
 function qualifies(v){
   return v > 0 && (scores.length < MAX_SCORES || v > scores[scores.length - 1].score);
 }
+
+/* ================= 연결 =================
+   같은 방 번호를 가진 두 사람이 짧은 쪽지를 주고받는다. 주고받는 쪽지는
+     {t:'hi',  n:이름}          들어왔다고 알림
+     {t:'bd',  g:판, s:점수}    내 판을 보여 줌
+     {t:'atk', n:줄수}          방해 줄을 보냄
+     {t:'end', s:점수}          내가 끝났다고 알림
+     {t:'bye'}                  나감
+
+   Supabase Realtime 의 broadcast 를 그대로 쓴다. 표는 만들지 않는다 —
+   쪽지는 지나가기만 하고 어디에도 저장되지 않는다.
+   아래 키는 공개용(publishable)이라 페이지에 들어가도 되는 키다. */
+const SUPABASE_URL = 'https://obuoxppexkkcpfmqdwjo.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_cTN0yUR3z8tvrNN0g6jn7w_a1VEkV_q';
+
+function netOpen(room, onMsg, onReady, onFail){
+  if(SUPABASE_URL && SUPABASE_KEY && window.WebSocket) return netCloud(room, onMsg, onReady, onFail);
+  return netLocal(room, onMsg, onReady);
+}
+
+/* 다른 기기끼리. Phoenix 채널 규칙을 그대로 따라 한다. */
+function netCloud(room, onMsg, onReady, onFail){
+  const topic = 'realtime:tetris-' + room;
+  const url = SUPABASE_URL.replace(/^http/, 'ws') + '/realtime/v1/websocket?apikey='
+            + encodeURIComponent(SUPABASE_KEY) + '&vsn=1.0.0';
+  let ws = null, ref = 0, joinRef = '', beat = 0, joined = false;
+  try{ ws = new WebSocket(url); }catch(e){ return null; }
+
+  function push(topicName, event, payload){
+    if(!ws || ws.readyState !== 1) return '';
+    ref++;
+    const r = String(ref);
+    try{ ws.send(JSON.stringify({ topic:topicName, event:event, payload:payload, ref:r })); }catch(e){}
+    return r;
+  }
+
+  ws.onopen = function(){
+    joinRef = push(topic, 'phx_join', { config:{ broadcast:{ self:false, ack:false } } });
+  };
+  ws.onmessage = function(e){
+    let m = null;
+    try{ m = JSON.parse(e.data); }catch(err){ return; }
+    if(!m) return;
+    if(!joined && m.ref === joinRef && m.event === 'phx_reply'){
+      if(m.payload && m.payload.status === 'ok'){
+        joined = true;
+        beat = setInterval(function(){ push('phoenix', 'heartbeat', {}); }, 25000);
+        onReady();
+      }else if(onFail){ onFail('거절됨'); }
+      return;
+    }
+    if(m.topic === topic && m.event === 'broadcast' && m.payload && m.payload.payload){
+      onMsg(m.payload.payload);
+    }
+  };
+  ws.onerror = function(){ if(!joined && onFail) onFail('연결 실패'); };
+  ws.onclose = function(){
+    if(beat){ clearInterval(beat); beat = 0; }
+    if(!joined && onFail) onFail('연결이 끊겼습니다');
+  };
+
+  return {
+    send: function(msg){ if(joined) push(topic, 'broadcast', { type:'broadcast', event:'m', payload:msg }); },
+    close: function(){ if(beat) clearInterval(beat); try{ ws.close(); }catch(e){} }
+  };
+}
+
+/* 같은 기기의 탭끼리. 주소와 키가 비어 있을 때만 쓴다. */
+function netLocal(room, onMsg, onReady){
+  let ch = null;
+  try{ ch = new BroadcastChannel('tetris-vs-' + room); }catch(e){ ch = null; }
+  if(!ch) return null;
+  ch.onmessage = function(e){ if(e && e.data && e.data.t) onMsg(e.data); };
+  setTimeout(onReady, 0);
+  return {
+    send: function(m){ try{ ch.postMessage(m); }catch(e){} },
+    close: function(){ try{ ch.close(); }catch(e){} }
+  };
+}
+
+function netSend(m){ if(net) net.send(m); }
+function netClose(){
+  if(net){ netSend({ t:'bye' }); net.close(); net = null; }
+}
+
+/* 판을 200글자 문자열로 줄여서 보낸다 ('.'는 빈 칸) */
+function packGrid(){
+  let s = '';
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++) s += grid[y][x] || '.';
+  return s;
+}
+
+function sendBoard(force){
+  if(mode !== 'versus' || !net) return;
+  const now = performance.now();
+  if(!force && now - sentBoardAt < BOARD_EVERY) return;
+  sentBoardAt = now;
+  /* 지금 내려오는 조각까지 얹어서 보낸다 */
+  let s = packGrid().split('');
+  if(piece && state === 'playing'){
+    cellsOf(piece).forEach(function(c){
+      if(c[1] >= 0 && c[1] < ROWS && c[0] >= 0 && c[0] < COLS) s[c[1]*COLS + c[0]] = piece.kind;
+    });
+  }
+  netSend({ t:'bd', g:s.join(''), s:score });
+}
+
+function onNetMsg(m){
+  oppSeen = performance.now();
+  if(m.t === 'hi'){
+    oppName = String(m.n || '').slice(0, 8) || '상대';
+    oppHere = true;
+    /* 먼저 와 있던 쪽도 인사를 돌려준다. 돌려준 인사에는 표시를 달아
+       서로 끝없이 주고받지 않게 한다. 한쪽이 새로고침해서 다시 들어와도
+       이 답인사 덕분에 다시 만난다. */
+    if(!m.r) netSend({ t:'hi', n:myName(), r:1 });
+    if(ovView === 'wait') beginCountdown();
+  }else if(m.t === 'bd'){
+    oppCells = typeof m.g === 'string' && m.g.length === ROWS*COLS ? m.g : null;
+    oppScore = Math.max(0, Math.floor(m.s || 0));
+    $('opp-score').textContent = fmt(oppScore);
+  }else if(m.t === 'atk'){
+    const n = Math.max(0, Math.min(12, Math.floor(m.n || 0)));
+    if(roundOn) pendingGarbage += n;
+  }else if(m.t === 'end'){
+    oppAlive = false;
+    if(roundOn) finishRound(true);
+  }else if(m.t === 'bye'){
+    oppHere = false;
+    if(roundOn){ oppAlive = false; finishRound(true, '상대가 나갔습니다.'); }
+    else if(ovView === 'wait') $('opp-note').textContent = '';
+  }
+}
+
+function myName(){ return (lastName || '나').slice(0, 8); }
+
 
 /* ================= 판 ================= */
 function emptyGrid(){
@@ -487,8 +686,28 @@ function lockPiece(){
       wrapEl.classList.add('shake');
     }
   }else{
+    takeGarbage();
     spawn();
   }
+  sendBoard(true);
+}
+
+/* 상대가 보낸 방해 줄을 바닥에 밀어 넣는다. 한 번에 온 줄은 구멍 자리가 같다. */
+function takeGarbage(){
+  if(mode !== 'versus' || pendingGarbage <= 0) return;
+  const n = Math.min(pendingGarbage, ROWS - 1);
+  pendingGarbage = 0;
+  const hole = Math.floor(Math.random() * COLS);
+  for(let i=0;i<n;i++){
+    grid.shift();
+    const row = new Array(COLS).fill('G');
+    row[hole] = null;
+    grid.push(row);
+  }
+  wrapEl.classList.remove('shake');
+  void wrapEl.offsetWidth;
+  wrapEl.classList.add('shake');
+  showToast(n + '줄 받음');
 }
 
 function scoreFor(n, spin){
@@ -507,7 +726,8 @@ function scoreFor(n, spin){
   }
 
   const difficult = (n === 4) || (spin && n > 0);
-  if(difficult && backToBack && gain){ gain = Math.floor(gain * 1.5); msg += ' B2B'; }
+  const chained = difficult && backToBack;        /* 앞 판도 어려운 줄이었나 */
+  if(chained && gain){ gain = Math.floor(gain * 1.5); msg += ' B2B'; }
   if(n > 0) backToBack = difficult;
 
   if(n > 0){
@@ -525,6 +745,27 @@ function scoreFor(n, spin){
     const nl = Math.floor(lines / 10) + 1;
     if(nl > level){ level = nl; showToast('레벨 ' + level); }
   }
+
+  /* 대전이면 지운 만큼 상대에게 방해 줄을 보낸다.
+     먼저 내게 쌓일 차례를 기다리던 줄부터 상쇄하고, 남는 만큼만 건너간다. */
+  if(mode === 'versus' && roundOn && n > 0){
+    let atk = GARBAGE[n] || 0;
+    if(spin === 'full') atk += 2;
+    if(chained) atk += 1;
+    if(combo > 0) atk += Math.floor(combo / 2);
+    if(atk > 0){
+      const cancel = Math.min(pendingGarbage, atk);
+      pendingGarbage -= cancel;
+      atk -= cancel;
+      if(atk > 0){
+        netSend({ t:'atk', n:atk });
+        showToast(atk + '줄 보냄');
+      }else if(cancel > 0){
+        showToast('막았다!');
+      }
+    }
+  }
+
   updateHud();
 }
 
@@ -542,7 +783,9 @@ function finishClear(){
   }
   clearRows = [];
   state = 'playing';
+  takeGarbage();
   spawn();
+  sendBoard(true);
 }
 
 /* 한 칸 내려오는 데 걸리는 시간. 낮은 레벨은 느긋하게, 레벨이 오를수록 줄어드는 폭이 커진다. */
@@ -563,6 +806,13 @@ function gameOver(){
   piece = null;
   softHeld = false; pressing = false;
   updateHud();
+
+  if(mode === 'versus'){
+    netSend({ t:'end', s:score });
+    if(roundOn) finishRound(false);       /* 내가 먼저 죽었으니 졌다 */
+    return;
+  }
+
   newEntryAt = -1;
   pendingEntry = qualifies(score)
     ? { score: score, lines: lines, level: level, at: Date.now() }
@@ -612,9 +862,13 @@ function setOverlay(o){
   ovForm.classList.toggle('show', !!o.form);
   ovList.classList.toggle('show', !!o.list);
   ovGuide.classList.toggle('show', !!o.guide);
-  btnPrimary.textContent = o.primary;
+  ovRoom.classList.toggle('show', !!o.room);
+  btnPrimary.textContent = o.primary || '';
+  btnPrimary.style.display = o.primary ? '' : 'none';
   btnSecond.textContent = o.secondary || '';
   btnSecond.classList.toggle('hide', !o.secondary);
+  btnThird.textContent = o.third || '';
+  btnThird.classList.toggle('hide', !o.third);
   overlayEl.classList.add('show');
 }
 function hideOverlay(){
@@ -622,6 +876,7 @@ function hideOverlay(){
   ovForm.classList.remove('show');
   ovList.classList.remove('show');
   ovGuide.classList.remove('show');
+  ovRoom.classList.remove('show');
 }
 
 /* 홈. 최근 기록 열 개를 그대로 펼쳐 보여 준다.
@@ -629,6 +884,7 @@ function hideOverlay(){
 /* 홈은 언제 와도 처음 켰을 때와 똑같다. 조작법 애니메이션, 기록, 시작 버튼. */
 function showHome(){
   ovView = 'home';
+  leaveVersus();
   state = 'ready';
   piece = null;
   grid = emptyGrid();          /* 뒤에 하던 판이 남아 보이지 않게 */
@@ -637,9 +893,133 @@ function showHome(){
     title: '테트리스',
     guide: true,
     list: true,
-    primary: '시작',
-    secondary: scores.length ? '기록 지우기' : ''
+    primary: '혼자 하기',
+    secondary: '둘이서',
+    third: scores.length ? '기록 지우기' : ''
   });
+}
+
+/* ---- 둘이서 ---- */
+function showLobby(){
+  ovView = 'lobby';
+  leaveVersus();
+  state = 'ready';
+  piece = null;
+  grid = emptyGrid();
+  ovCode.readOnly = false;
+  ovCode.value = '';
+  setOverlay({
+    title: '둘이서',
+    score: '같은 방 번호를 넣으면 맞붙습니다',
+    sub: '한 사람이 방을 만들고, 다른 사람이\n그 번호를 넣어 들어오세요.',
+    room: true,
+    primary: '방 만들기',
+    secondary: '들어가기',
+    third: '홈으로'
+  });
+}
+
+function showWait(){
+  ovView = 'wait';
+  ovCode.readOnly = true;
+  ovCode.value = roomCode;
+  $('opp-note').textContent = '';
+  setOverlay({
+    title: '방 번호',
+    score: iAmHost ? '이 번호를 상대에게 알려 주세요' : '들어왔습니다',
+    sub: '상대가 들어오면 바로 시작합니다.',
+    room: true,
+    primary: '',
+    third: '나가기'
+  });
+}
+
+function showResult(won, why){
+  ovView = 'result';
+  resultText = why || '';
+  setOverlay({
+    title: won ? '이겼습니다' : '졌습니다',
+    score: '나 ' + fmt(score) + '\n' + (oppName || '상대') + ' ' + fmt(oppScore),
+    sub: resultText,
+    primary: '다시 하기',
+    third: '홈으로'
+  });
+}
+
+function makeRoom(){
+  roomCode = String(Math.floor(100000 + Math.random() * 900000));
+  iAmHost = true;
+  joinRoom(roomCode);
+}
+
+function joinRoom(code){
+  roomCode = String(code).replace(/\D/g, '').slice(0, 6);
+  if(roomCode.length !== 6){
+    ovSub.textContent = '방 번호는 여섯 자리 숫자입니다.';
+    return;
+  }
+  netClose();
+  oppHere = false; oppName = ''; oppCells = null; oppScore = 0; oppAlive = true;
+  mode = 'versus';
+  net = netOpen(roomCode, onNetMsg, function(){
+    netSend({ t:'hi', n:myName() });
+    if(ovView === 'wait') $('opp-note').textContent = '';
+  }, function(why){
+    if(ovView === 'wait' || ovView === 'lobby'){
+      ovSub.style.display = '';
+      ovSub.textContent = why + '. 인터넷을 확인하고 다시 해 보세요.';
+    }
+  });
+  if(!net){
+    mode = 'solo';
+    ovSub.style.display = '';
+    ovSub.textContent = '이 브라우저에서는 연결할 수 없습니다.';
+    return;
+  }
+  showWait();
+}
+
+function leaveVersus(){
+  netClose();
+  mode = 'solo';
+  roundOn = false;
+  oppHere = false; oppCells = null; oppName = ''; oppScore = 0; oppAlive = true;
+  pendingGarbage = 0;
+  countdownAt = 0;
+  oppEl.classList.remove('show');
+}
+
+function beginCountdown(){
+  countdownAt = performance.now() + 3200;
+  countdownShown = 0;
+  hideOverlay();
+  oppEl.classList.add('show');
+  $('opp-name').textContent = oppName || '상대';
+  $('opp-score').textContent = '0';
+  state = 'ready';
+  piece = null;
+  grid = emptyGrid();
+  score = 0; level = 1; lines = 0; combo = -1; backToBack = false;
+  pendingGarbage = 0;
+  updateHud();
+  layout();
+  showToast('3');
+}
+
+function startRound(){
+  countdownAt = 0;
+  roundOn = true;
+  oppAlive = true;
+  reset();
+  showToast('시작!');
+  sendBoard(true);
+}
+
+function finishRound(won, why){
+  roundOn = false;
+  state = 'over';
+  piece = null;
+  showResult(won, why || (won ? '상대가 먼저 무너졌습니다.' : '내가 먼저 무너졌습니다.'));
 }
 
 function showOver(){
@@ -1026,9 +1406,55 @@ function layout(){
   setAppHeight();
   const sw = stageEl.clientWidth, sh = stageEl.clientHeight;
   if(!sw || !sh) return;
-  cell = Math.max(10, Math.floor(Math.min(sw / COLS, sh / ROWS)));
+
+  /* 대전이면 오른쪽에 상대 화면 자리를 뗀다 */
+  const showOpp = oppEl.classList.contains('show');
+  const oppW = showOpp ? Math.max(56, Math.min(80, Math.round(sw * 0.18))) : 0;
+  const availW = sw - (oppW ? oppW + 6 : 0);
+
+  cell = Math.max(10, Math.floor(Math.min(availW / COLS, sh / ROWS)));
   sizeCanvas(boardCv, boardCx, cell * COLS, cell * ROWS);
+  if(showOpp){
+    oppEl.style.width = oppW + 'px';
+    const oc = Math.max(3, Math.floor(oppW / COLS));
+    sizeCanvas(oppCv, oppCx, oc * COLS, oc * ROWS);
+  }
   drawBoard();
+  drawOpp();
+}
+
+/* 상대 판. 받은 문자열을 그대로 작게 찍는다. */
+function drawOpp(){
+  if(!oppEl.classList.contains('show')) return;
+  const w = parseFloat(oppCv.style.width) || 0, h = parseFloat(oppCv.style.height) || 0;
+  if(!w) return;
+  const c = w / COLS;
+  oppCx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  oppCx.clearRect(0, 0, w, h);
+  if(oppCells){
+    for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+      const k = oppCells[y*COLS + x];
+      if(k === '.') continue;
+      drawBlock(oppCx, x*c, y*c, c, COLORS[k] || '#5d6483', oppAlive ? 1 : .4);
+    }
+  }
+  if(!oppAlive){
+    oppCx.globalAlpha = .5;
+    oppCx.fillStyle = '#ef6f7b';
+    oppCx.fillRect(0, h/2 - 1, w, 2);
+    oppCx.globalAlpha = 1;
+  }
+}
+
+/* 날아와서 쌓일 차례를 기다리는 방해 줄을 보드 왼쪽에 막대로 보여 준다 */
+function drawWarn(){
+  if(mode !== 'versus' || !pendingGarbage){
+    warnEl.style.opacity = '0';
+    return;
+  }
+  const f = Math.min(1, pendingGarbage / 8);
+  warnEl.style.opacity = '1';
+  warnEl.style.transform = 'scaleY(' + f.toFixed(3) + ')';
 }
 
 /* ================= 루프 ================= */
@@ -1038,6 +1464,25 @@ function frame(t){
   let dt = t - last;
   last = t;
   if(dt > 200) dt = 200;
+
+  /* 대전 준비: 3 · 2 · 1. 시계를 보고 세므로 잠깐 멈췄다 와도 어긋나지 않는다 */
+  if(countdownAt){
+    const left = countdownAt - performance.now();
+    if(left <= 0){ startRound(); }
+    else{
+      const n = Math.ceil(left / 1000);
+      if(n !== countdownShown){ countdownShown = n; showToast(String(n)); }
+    }
+  }
+
+  if(mode === 'versus' && roundOn){
+    sendBoard(false);
+    if(oppSeen && performance.now() - oppSeen > DROP_TIMEOUT){
+      oppHere = false;
+      oppAlive = false;
+      finishRound(true, '상대 연결이 끊겼습니다.');
+    }
+  }
 
   if(state === 'clearing'){
     clearTimer -= dt;
@@ -1069,6 +1514,8 @@ function frame(t){
   }
 
   drawBoard();
+  drawOpp();
+  drawWarn();
 
   if(overlayEl.classList.contains('show')){
     sizeBg();
@@ -1189,13 +1636,17 @@ document.addEventListener('keyup', function(e){
 /* ================= 버튼 · 생명주기 ================= */
 function startGame(){
   hideOverlay();
+  leaveVersus();
   newEntryAt = -1;
   pendingEntry = null;
   reset();
 }
 
+/* 대전 중에는 멈출 수 없다. 한쪽만 멈추면 공평하지 않다. */
+function canPause(){ return !(mode === 'versus' && roundOn); }
+
 function pauseGame(){
-  if(state !== 'playing') return;
+  if(state !== 'playing' || !canPause()) return;
   state = 'paused';
   softHeld = false; pressing = false;
 }
@@ -1206,8 +1657,10 @@ function resumeGame(){
   last = 0;
 }
 function togglePause(){
-  if(state === 'playing'){ pauseGame(); showPause(); }
-  else if(state === 'paused') resumeGame();
+  if(state === 'playing'){
+    if(!canPause()) return;
+    pauseGame(); showPause();
+  }else if(state === 'paused') resumeGame();
 }
 
 btnPrimary.addEventListener('click', function(){
@@ -1216,6 +1669,8 @@ btnPrimary.addEventListener('click', function(){
     showHome();
     return;
   }
+  if(ovView === 'lobby'){ makeRoom(); return; }            // 방 만들기
+  if(ovView === 'result'){ rematch(); return; }            // 다시 하기
   if(ovView === 'paused'){ resumeGame(); return; }
   if(ovView === 'over' && pendingEntry){ saveEntry(); return; }
   startGame();
@@ -1227,14 +1682,29 @@ btnSecond.addEventListener('click', function(){
     else resumeGame();
     return;
   }
-  if(ovView === 'home'){ showConfirmWipe(); return; }       // 기록 지우기
+  if(ovView === 'home'){ showLobby(); return; }             // 둘이서
+  if(ovView === 'lobby'){ joinRoom(ovCode.value); return; } // 들어가기
   if(ovView === 'paused'){ showConfirmHome(); return; }     // 홈 (한 번 되묻는다)
   showHome();                                              // 게임 오버에서 홈으로
 });
 
+btnThird.addEventListener('click', function(){
+  if(ovView === 'home'){ showConfirmWipe(); return; }       // 기록 지우기
+  showHome();                                               // 나가기 · 홈으로
+});
+
+/* 상대가 아직 있으면 한 판 더, 없으면 방에서 기다린다 */
+function rematch(){
+  if(mode !== 'versus' || !net){ showHome(); return; }
+  if(oppHere) beginCountdown();
+  else showWait();
+}
+
 $('btn-home').addEventListener('click', function(){
-  if(state === 'playing'){ pauseGame(); showConfirmHome(); }
-  else showHome();
+  if(state !== 'playing'){ showHome(); return; }
+  if(mode === 'versus' && roundOn){ showConfirmHome(); return; }  /* 대전은 멈추지 않는다 */
+  pauseGame();
+  showConfirmHome();
 });
 
 /* 아래 화살표 버튼. ← → 는 꾹 누르면 연타되고, ↓ 는 누르고 있는 동안 내려간다
