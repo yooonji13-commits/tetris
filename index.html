@@ -357,8 +357,44 @@ let newEntryAt = -1;            // 방금 넣은 기록의 순위(강조용)
 
 /* ================= 기록 저장 ================= */
 const KEY_SCORES = 'tetris.scores', KEY_NAME = 'tetris.name', KEY_OLD_BEST = 'tetris.best';
+const KEY_VS = 'tetris.vs';
 let scores = [];
 let lastName = '';
+let vsRec = {};                 /* 상대 이름 -> {w:이긴 판, l:진 판, at:마지막 날짜} */
+
+function readVs(){
+  try{
+    const raw = localStorage.getItem(KEY_VS);
+    const p = raw ? JSON.parse(raw) : null;
+    if(p && typeof p === 'object' && !Array.isArray(p)){
+      Object.keys(p).forEach(function(k){
+        const r = p[k];
+        if(r && typeof r === 'object'){
+          vsRec[String(k).slice(0, 8)] = {
+            w: Math.max(0, Math.floor(r.w || 0)),
+            l: Math.max(0, Math.floor(r.l || 0)),
+            at: Math.floor(r.at || 0)
+          };
+        }
+      });
+    }
+  }catch(e){ vsRec = {}; }
+}
+function writeVs(){ try{ localStorage.setItem(KEY_VS, JSON.stringify(vsRec)); }catch(e){} }
+
+/* 한 판 끝날 때마다 상대 이름 밑에 적어 둔다 */
+function noteResult(name, won){
+  const k = String(name || '상대').slice(0, 8);
+  const r = vsRec[k] || { w:0, l:0, at:0 };
+  if(won) r.w++; else r.l++;
+  r.at = Date.now();
+  vsRec[k] = r;
+  writeVs();
+}
+function vsText(name){
+  const r = vsRec[String(name || '').slice(0, 8)];
+  return r ? (r.w + '승 ' + r.l + '패') : '';
+}
 
 function readStore(){
   try{
@@ -393,10 +429,12 @@ function readStore(){
 
 function wipeScores(){
   scores = [];
+  vsRec = {};
   newEntryAt = -1;
   try{
     localStorage.removeItem(KEY_SCORES);
     localStorage.removeItem(KEY_OLD_BEST);
+    localStorage.removeItem(KEY_VS);
   }catch(e){}
 }
 function sortScores(){
@@ -539,7 +577,7 @@ function onNetMsg(m){
     if(roundOn) finishRound(true);
   }else if(m.t === 'bye'){
     oppHere = false;
-    if(roundOn){ oppAlive = false; finishRound(true, '상대가 나갔습니다.'); }
+    if(roundOn){ oppAlive = false; finishRound(true, '상대가 나갔습니다. 전적에는 넣지 않습니다.', false); }
     else if(ovView === 'wait') $('opp-note').textContent = '';
   }
 }
@@ -895,7 +933,7 @@ function showHome(){
     list: true,
     primary: '혼자 하기',
     secondary: '둘이서',
-    third: scores.length ? '기록 지우기' : ''
+    third: (scores.length || Object.keys(vsRec).length) ? '기록 지우기' : ''
   });
 }
 
@@ -908,15 +946,48 @@ function showLobby(){
   grid = emptyGrid();
   ovCode.readOnly = false;
   ovCode.value = '';
+  const any = renderVsList();
   setOverlay({
     title: '둘이서',
     score: '같은 방 번호를 넣으면 맞붙습니다',
     sub: '한 사람이 방을 만들고, 다른 사람이\n그 번호를 넣어 들어오세요.',
     room: true,
+    list: any,
     primary: '방 만들기',
     secondary: '들어가기',
     third: '홈으로'
   });
+}
+
+/* 지금까지 누구와 몇 번 이기고 졌는지 */
+function renderVsList(){
+  const names = Object.keys(vsRec).sort(function(a, b){ return (vsRec[b].at || 0) - (vsRec[a].at || 0); });
+  if(!names.length) return false;
+  while(ovList.firstChild) ovList.removeChild(ovList.firstChild);
+  names.slice(0, MAX_SCORES).forEach(function(nm){
+    const r = vsRec[nm];
+    const row = document.createElement('div');
+    row.className = 'rank-row';
+
+    const main = document.createElement('div');
+    main.className = 'rank-main';
+    const a = document.createElement('span');
+    a.className = 'rank-name';
+    a.textContent = nm;
+    main.appendChild(a);
+    const meta = document.createElement('span');
+    meta.className = 'rank-meta';
+    meta.textContent = (r.w + r.l) + '판' + (r.at ? ' · ' + dateText(r.at) : '');
+    main.appendChild(meta);
+
+    const sc = document.createElement('span');
+    sc.className = 'rank-score';
+    sc.textContent = r.w + '승 ' + r.l + '패';
+
+    row.appendChild(main); row.appendChild(sc);
+    ovList.appendChild(row);
+  });
+  return true;
 }
 
 function showWait(){
@@ -937,9 +1008,11 @@ function showWait(){
 function showResult(won, why){
   ovView = 'result';
   resultText = why || '';
+  const rec = vsText(oppName);
   setOverlay({
     title: won ? '이겼습니다' : '졌습니다',
-    score: '나 ' + fmt(score) + '\n' + (oppName || '상대') + ' ' + fmt(oppScore),
+    score: '나 ' + fmt(score) + '\n' + (oppName || '상대') + ' ' + fmt(oppScore)
+           + (rec ? '\n\n' + (oppName || '상대') + '와 ' + rec : ''),
     sub: resultText,
     primary: '다시 하기',
     third: '홈으로'
@@ -1015,10 +1088,12 @@ function startRound(){
   sendBoard(true);
 }
 
-function finishRound(won, why){
+/* counted 가 false 면 전적에 넣지 않는다 — 연결이 끊기거나 상대가 나간 판이다 */
+function finishRound(won, why, counted){
   roundOn = false;
   state = 'over';
   piece = null;
+  if(counted !== false) noteResult(oppName, won);
   showResult(won, why || (won ? '상대가 먼저 무너졌습니다.' : '내가 먼저 무너졌습니다.'));
 }
 
@@ -1059,7 +1134,7 @@ function showConfirmWipe(){
   confirmKind = 'wipe';
   setOverlay({
     title: '기록 지우기',
-    score: '기록을 모두 지울까요?',
+    score: '기록과 대전 전적을 모두 지울까요?',
     sub: '지우면 되돌릴 수 없습니다.',
     primary: '예',
     secondary: '아니오'
@@ -1480,7 +1555,7 @@ function frame(t){
     if(oppSeen && performance.now() - oppSeen > DROP_TIMEOUT){
       oppHere = false;
       oppAlive = false;
-      finishRound(true, '상대 연결이 끊겼습니다.');
+      finishRound(true, '상대 연결이 끊겼습니다. 전적에는 넣지 않습니다.', false);
     }
   }
 
@@ -1772,6 +1847,7 @@ document.addEventListener('dblclick', function(e){ e.preventDefault(); });
 
 /* ================= 시작 ================= */
 readStore();
+readVs();
 grid = emptyGrid();
 fillQueue();
 updateHud();
