@@ -50,18 +50,30 @@
             white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
   /* ---------- 아래 조작 버튼 ---------- */
-  #bar{ flex:0 0 auto; display:flex; align-items:stretch; gap:6px; }
+  #bar{ flex:0 0 auto; display:flex; align-items:center; justify-content:center; gap:6px; }
   .bar-btn{
-    flex:1 1 0; height:44px; border-radius:11px; padding:0;
-    font-size:20px; font-weight:600; line-height:1; color:#e9ecff;
+    position:relative; flex:1 1 0; max-width:60px; aspect-ratio:1; padding:0;
+    border-radius:50%;                      /* 동그란 버튼 */
+    font-size:21px; font-weight:600; line-height:1; color:#e9ecff;
     background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.28);
     display:flex; align-items:center; justify-content:center;
     transition:transform .08s ease, background-color .12s ease;
   }
   .bar-btn:active,.bar-btn.held{
-    transform:scale(.95); background:rgba(167,139,250,.32); border-color:rgba(255,255,255,.55);
+    transform:scale(.93); background:rgba(167,139,250,.32); border-color:rgba(255,255,255,.6);
   }
-  #btn-home{ flex:0 0 52px; font-size:20px; }
+  /* 누를 때 한 번 튕기고, 테두리에서 고리가 퍼져 나간다 */
+  @keyframes btn-pop{ 0%{ transform:scale(1); } 35%{ transform:scale(.86); } 100%{ transform:scale(1); } }
+  @keyframes btn-ring{ 0%{ opacity:.85; transform:scale(1); } 100%{ opacity:0; transform:scale(1.55); } }
+  .bar-btn::after{
+    content:''; position:absolute; inset:-1px; border-radius:50%;
+    border:2px solid #c4a8ff; opacity:0; pointer-events:none;
+  }
+  .bar-btn.tap{ animation:btn-pop .18s ease; }
+  .bar-btn.tap::after{ animation:btn-ring .36s ease-out; }
+
+  /* 아이폰 진동용 스위치. 화면에는 보이지 않지만 지워 두면 진동이 안 온다. */
+  #haptic-label{ position:absolute; left:-9999px; width:1px; height:1px; overflow:hidden; opacity:0; }
 
   /* ---------- 보드 ---------- */
   #stage{ flex:1 1 auto; min-height:0; display:flex; align-items:center; justify-content:center; gap:6px; }
@@ -242,12 +254,18 @@
 
   <div id="bar">
     <button class="bar-btn" data-act="left" data-repeat="1" aria-label="왼쪽으로">←</button>
-    <button class="bar-btn" data-act="rotate" aria-label="회전">↻</button>
-    <button class="bar-btn" data-act="right" data-repeat="1" aria-label="오른쪽으로">→</button>
     <button class="bar-btn" data-act="down" aria-label="내리기">↓</button>
+    <button class="bar-btn" data-act="right" data-repeat="1" aria-label="오른쪽으로">→</button>
+    <button class="bar-btn" data-act="rotate" aria-label="회전">↻</button>
     <button class="bar-btn" data-act="drop" aria-label="바로 내리기">⤓</button>
     <button class="bar-btn" id="btn-home" aria-label="홈">🏠</button>
   </div>
+
+  <!-- 아이폰 진동용. 사파리는 navigator.vibrate 를 지원하지 않아서
+       iOS 17.4 부터 되는 스위치 토글로 대신한다. 보이지 않지만 그려는 둬야 한다. -->
+  <label id="haptic-label" aria-hidden="true">
+    <input id="haptic" type="checkbox" switch tabindex="-1">
+  </label>
 
   <div id="overlay" class="show">
     <canvas id="ov-bg" aria-hidden="true"></canvas>
@@ -2164,6 +2182,7 @@ function rematch(){
   else showWait();
 }
 
+$('btn-home').addEventListener('pointerdown', function(){ tapEffect($('btn-home')); buzz(11); });
 $('btn-home').addEventListener('click', function(){
   if(state !== 'playing'){ showHome(); return; }
   if(mode === 'versus' && roundOn){ showConfirmHome(); return; }  /* 대전은 멈추지 않는다 */
@@ -2175,6 +2194,29 @@ $('btn-home').addEventListener('click', function(){
    (보드를 누르고 있을 때와 같은 방식이라 오래 누를수록 빨라진다). */
 const barStops = [];
 function releaseBar(){ for(let i=0;i<barStops.length;i++) barStops[i](); }
+
+/* 버튼을 누른 티를 낸다: 한 번 튕기고 고리가 퍼진다 */
+function tapEffect(btn){
+  btn.classList.remove('tap');
+  void btn.offsetWidth;                    /* 다시 틀려면 한 번 끊어 줘야 한다 */
+  btn.classList.add('tap');
+}
+
+/* 진동.
+   안드로이드·크롬은 navigator.vibrate 가 있다.
+   아이폰 사파리는 그게 없어서, iOS 17.4 부터 되는 스위치 토글로 대신한다.
+   둘 다 안 되는 기기에서는 조용히 넘어간다. */
+const hapticBox = $('haptic'), hapticLabel = $('haptic-label');
+let hapticOk = true;
+function buzz(ms){
+  if(!hapticOk) return;
+  try{
+    if(navigator.vibrate){ navigator.vibrate(ms || 12); return; }
+  }catch(e){}
+  try{
+    if(hapticBox){ hapticBox.checked = !hapticBox.checked; hapticLabel.click(); }
+  }catch(e){ hapticOk = false; }
+}
 
 document.querySelectorAll('.bar-btn[data-act]').forEach(function(btn){
   const name = btn.dataset.act, repeat = btn.dataset.repeat === '1';
@@ -2199,6 +2241,8 @@ document.querySelectorAll('.bar-btn[data-act]').forEach(function(btn){
     e.preventDefault();
     try{ btn.setPointerCapture(e.pointerId); }catch(err){}
     btn.classList.add('held');
+    tapEffect(btn);
+    buzz(name === 'drop' ? 20 : 11);
     if(state !== 'playing') return;
     if(name === 'down'){
       pressing = true;
