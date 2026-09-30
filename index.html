@@ -73,7 +73,12 @@
   .bar-btn.tap::after{ animation:btn-ring .36s ease-out; }
 
   /* 아이폰 진동용 스위치. 화면에는 보이지 않지만 지워 두면 진동이 안 온다. */
-  #haptic-label{ position:absolute; left:-9999px; width:1px; height:1px; overflow:hidden; opacity:0; }
+  /* 화면 밖으로 빼면 사파리가 햅틱을 울려 주지 않는다. 화면 안에 두되 보이지 않게. */
+  #haptic-label{
+    position:absolute; right:0; bottom:0; width:18px; height:18px;
+    opacity:0; pointer-events:none; overflow:hidden;
+  }
+  #haptic{ width:18px; height:18px; margin:0; }
 
   /* ---------- 보드 ---------- */
   #stage{ flex:1 1 auto; min-height:0; display:flex; align-items:center; justify-content:center; gap:6px; }
@@ -263,9 +268,7 @@
 
   <!-- 아이폰 진동용. 사파리는 navigator.vibrate 를 지원하지 않아서
        iOS 17.4 부터 되는 스위치 토글로 대신한다. 보이지 않지만 그려는 둬야 한다. -->
-  <label id="haptic-label" aria-hidden="true">
-    <input id="haptic" type="checkbox" switch tabindex="-1">
-  </label>
+  <label id="haptic-label" for="haptic"><input id="haptic" type="checkbox" switch tabindex="-1"></label>
 
   <div id="overlay" class="show">
     <canvas id="ov-bg" aria-hidden="true"></canvas>
@@ -2210,10 +2213,13 @@ let hapticOk = true;
 function buzz(ms){
   if(!hapticOk) return;
   try{
-    if(navigator.vibrate){ navigator.vibrate(ms || 12); return; }
+    if(navigator.vibrate && navigator.vibrate(ms || 12)) return;   /* 안드로이드 */
   }catch(e){}
+  /* 아이폰: 스위치를 한 번 넘기면 사파리가 햅틱을 울려 준다(iOS 17.4 이상).
+     라벨을 누르면 스위치가 알아서 뒤집힌다. 여기서 checked 를 직접 건드리면
+     두 번 뒤집혀 제자리로 돌아가 버리고, 그러면 아무 일도 일어나지 않는다. */
   try{
-    if(hapticBox){ hapticBox.checked = !hapticBox.checked; hapticLabel.click(); }
+    if(hapticLabel) hapticLabel.click();
   }catch(e){ hapticOk = false; }
 }
 
