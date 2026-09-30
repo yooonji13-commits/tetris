@@ -319,8 +319,6 @@ const SOFT_MS = 30;                 /* 키보드 ↓ 를 누르고 있을 때 �
    아이폰은 누르는 힘을 알려 주지 않으므로 '누르고 있는 시간'으로 대신한다. */
 const PRESS_DELAY = 200;            /* 이만큼 누르고 있으면 내려가기 시작 (그 전은 회전) */
 const PRESS_SLOW = 150, PRESS_FAST = 32, PRESS_RAMP = 900;
-const ZONE = 1 / 3;                 /* 보드 좌우 끝 칸의 폭 (나머지 가운데는 회전) */
-const FLASH_MS = 220;               /* 톡 한 자리가 밝아졌다 사라지는 시간 */
 const MAX_SCORES = 10;              /* 기록표에 남기는 개수 */
 
 const COLORS = {
@@ -648,7 +646,6 @@ let score = 0, level = 1, lines = 0, combo = -1, backToBack = false;
 let state = 'ready';            // ready | playing | paused | clearing | over
 let dropAcc = 0, lockTimer = 0, lockResets = 0, softHeld = false;
 let pressing = false, pressSince = 0;
-let flashSide = '', flashLeft = 0;    /* 방금 톡 한 자리 */
 let clearRows = [], clearTimer = 0;
 let lastRotateKick = false, lastActionRotate = false;
 let cell = 24, dpr = 1;
@@ -1279,8 +1276,8 @@ function showToast(text){
 }
 
 /* ---- 오버레이 ---- */
-const HELP = '· 왼쪽·오른쪽 끝을 톡 하면 한 칸씩 옮겨집니다\n'
-           + '· 가운데를 톡 하면 블록이 돌아갑니다\n'
+const HELP = '· 화면을 좌우로 쓸면 블록이 옮겨집니다\n'
+           + '· 톡 누르면 블록이 돌아갑니다\n'
            + '· 꾹 누르면 내려갑니다. 오래 누를수록 빨라집니다\n'
            + '· 아래로 훅 쓸면 바로 내려갑니다';
 
@@ -1658,8 +1655,6 @@ function drawBoard(){
     }
   }
 
-  drawZoneFlash();
-
   if(piece && (state === 'playing' || state === 'paused')){
     let gy = piece.y;
     while(!collides(piece, piece.rot, piece.x, gy + 1)) gy++;
@@ -1748,8 +1743,8 @@ function drawFloats(){
    한 장면씩 2.1초, 아래 한 줄로 무엇을 하는 중인지 적어 준다. */
 const DEMO_MS = 2100;
 const DEMO_CAPS = [
-  '왼쪽·오른쪽 끝을 톡 하면 한 칸씩',
-  '가운데를 톡 하면 돌아갑니다',
+  '좌우로 쓸면 옮겨집니다',
+  '톡 누르면 돌아갑니다',
   '꾹 누르면 내려갑니다',
   '아래로 훅 쓸면 바로 내려갑니다'
 ];
@@ -1785,22 +1780,6 @@ function demoFinger(x, y, ring, ringAlpha){
   demoCx.globalAlpha = 1;
 }
 
-/* 지금 어느 칸을 톡 하는 중인지 흐리게 칠하고, 칸 경계도 그어 준다 */
-function demoZone(ox, oy, gw, gh, zw, side){
-  demoCx.globalAlpha = .16;
-  demoCx.fillStyle = side === 'm' ? '#a78bfa' : '#7de3ff';
-  if(side === 'l') demoCx.fillRect(ox, oy, zw, gh);
-  else if(side === 'r') demoCx.fillRect(ox + gw - zw, oy, zw, gh);
-  else demoCx.fillRect(ox + zw, oy, gw - zw * 2, gh);
-  demoCx.globalAlpha = .3;
-  demoCx.strokeStyle = '#ffffff'; demoCx.lineWidth = 1;
-  demoCx.beginPath();
-  demoCx.moveTo(ox + zw + .5, oy); demoCx.lineTo(ox + zw + .5, oy + gh);
-  demoCx.moveTo(ox + gw - zw + .5, oy); demoCx.lineTo(ox + gw - zw + .5, oy + gh);
-  demoCx.stroke();
-  demoCx.globalAlpha = 1;
-}
-
 function drawDemo(dt){
   sizeDemo();
   if(!demoCell) return;
@@ -1829,24 +1808,24 @@ function drawDemo(dt){
 
   const kind = 'T', floor = DEMO_ROWS - 2;
 
-  const zw = gw * ZONE;
-
-  if(scene === 0){                                   /* 좌우 끝을 톡 */
-    const step = Math.floor(local / 520), sub = (local % 520) / 520;
-    const goRight = step >= 2;                       /* 왼쪽 두 번, 오른쪽 두 번 */
-    const px = goRight ? (step - 1) : (3 - step);
-    demoZone(ox, oy, gw, gh, zw, goRight ? 'r' : 'l');
+  if(scene === 0){                                   /* 좌우로 쓸기 */
+    const t = Math.min(1, local / 1600);
+    const tri = t < .5 ? easeInOut(t / .5) : 1 - easeInOut((t - .5) / .5);
+    const px = 1 + tri * 3;
     demoBlocks(kind, 0, px, 1, ox, oy, c, 1);
-    const fx = goRight ? ox + gw - zw / 2 : ox + zw / 2;
-    const grow = Math.min(1, sub / .38);
-    demoFinger(fx, oy + gh * 0.62, 6 + grow * 15, (1 - grow) * .6);
+    const fx = ox + (px + 1.5) * c, fy = oy + gh - c * 0.45;
+    demoCx.globalAlpha = .3;
+    demoCx.strokeStyle = '#fff'; demoCx.lineWidth = 1.4;
+    demoCx.beginPath(); demoCx.moveTo(ox + 1.5*c, fy); demoCx.lineTo(ox + 5.5*c, fy); demoCx.stroke();
+    demoCx.globalAlpha = 1;
+    demoFinger(fx, fy, 11, .35);
 
-  }else if(scene === 1){                             /* 가운데를 톡 */
+  }else if(scene === 1){                             /* 톡 눌러 회전 */
     const step = Math.floor(local / 520), sub = (local % 520) / 520;
-    demoZone(ox, oy, gw, gh, zw, 'm');
     demoBlocks(kind, step % 4, 2, 1, ox, oy, c, 1);
+    const fx = ox + 3.5 * c, fy = oy + 2.5 * c;
     const grow = Math.min(1, sub / .38);
-    demoFinger(ox + gw / 2, oy + gh * 0.62, 6 + grow * 15, (1 - grow) * .6);
+    demoFinger(fx, fy, 6 + grow * 16, (1 - grow) * .5);
 
   }else if(scene === 2){                             /* 꾹 눌러 내리기 */
     const t = Math.min(1, local / 1700);
@@ -1949,22 +1928,6 @@ function drawOpp(){
 }
 
 /* 날아와서 쌓일 차례를 기다리는 방해 줄을 보드 왼쪽에 막대로 보여 준다 */
-function flashZone(side){ flashSide = side; flashLeft = FLASH_MS; }
-
-/* 방금 톡 한 자리를 잠깐 밝혀 준다. 어디를 눌렀는지 눈으로 알 수 있게. */
-function drawZoneFlash(){
-  if(!flashLeft || !flashSide) return;
-  const w = COLS * cell, h = ROWS * cell;
-  const f = flashLeft / FLASH_MS;
-  const zw = w * ZONE;
-  boardCx.globalAlpha = f * 0.22;
-  boardCx.fillStyle = flashSide === 'm' ? '#a78bfa' : '#7de3ff';
-  if(flashSide === 'l') boardCx.fillRect(0, 0, zw, h);
-  else if(flashSide === 'r') boardCx.fillRect(w - zw, 0, zw, h);
-  else boardCx.fillRect(zw, 0, w - zw * 2, h);
-  boardCx.globalAlpha = 1;
-}
-
 function drawWarn(){
   if(mode !== 'versus' || !pendingGarbage){
     warnEl.style.opacity = '0';
@@ -2031,8 +1994,6 @@ function frame(t){
     updateHud();
   }
 
-  if(flashLeft > 0) flashLeft = Math.max(0, flashLeft - dt);
-
   drawBoard();
   drawOpp();
   drawWarn();
@@ -2052,14 +2013,13 @@ function frame(t){
 }
 
 /* ================= 입력 ================= */
-/* 보드 위 조작. 보드를 세로로 삼등분해서 어디를 톡 했는지로 나눈다.
-   - 왼쪽 3분의 1 톡    한 칸 왼쪽
-   - 가운데 톡          회전
-   - 오른쪽 3분의 1 톡  한 칸 오른쪽
+/* 보드 위 조작
+   - 좌우로 쓸기        옮기기
+   - 톡 (0.2초 안에)   회전
    - 꾹 누르고 있기     내려가기. 오래 누를수록 빨라진다
    - 아래로 훅 쓸기     바로 내림                                       */
 (function(){
-  let sx=0, sy=0, st=0, dir=null, active=false, pressTimer=null;
+  let sx=0, sy=0, lx=0, st=0, accX=0, dir=null, active=false, pressTimer=null;
 
   function beginPress(){
     pressTimer = null;
@@ -2075,8 +2035,8 @@ function frame(t){
 
   wrapEl.addEventListener('pointerdown', function(e){
     if(state !== 'playing') return;
-    active = true; dir = null;
-    sx = e.clientX; sy = e.clientY; st = performance.now();
+    active = true; dir = null; accX = 0;
+    sx = lx = e.clientX; sy = e.clientY; st = performance.now();
     try{ wrapEl.setPointerCapture(e.pointerId); }catch(err){}
     stopPress();
     pressTimer = setTimeout(beginPress, PRESS_DELAY);
@@ -2088,18 +2048,24 @@ function frame(t){
     const dx = e.clientX - sx, dy = e.clientY - sy;
     if(!dir && (Math.abs(dx) > 9 || Math.abs(dy) > 9)){
       dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
-      /* 좌우로 문지르는 건 이제 아무것도 안 한다. 누르고 있던 것만 취소한다. */
-      if(dir === 'h') stopPress();
+      /* 좌우로 쓸기 시작했으면 누르고 있던 것은 취소한다.
+         아래로 밀고 있는 건 '누른 채로 밀어 내리는 것'이라 그대로 둔다. */
+      if(dir === 'h'){
+        stopPress();
+        accX = dx - (e.clientX - lx);
+      }
     }
+    if(dir === 'h'){
+      accX += e.clientX - lx;
+      const step = Math.max(14, cell * 0.85);
+      while(Math.abs(accX) >= step){
+        const s = accX > 0 ? 1 : -1;
+        tryMove(s, 0);
+        accX -= s * step;
+      }
+    }
+    lx = e.clientX;
   });
-
-  /* 톡 한 자리가 보드의 어느 쪽인지 */
-  function zoneOf(clientX){
-    const r = boardCv.getBoundingClientRect();
-    if(!r.width) return 'm';
-    const t = (clientX - r.left) / r.width;
-    return t < ZONE ? 'l' : (t > 1 - ZONE ? 'r' : 'm');
-  }
 
   function end(e){
     if(!active) return;
@@ -2110,16 +2076,10 @@ function frame(t){
     const dt = performance.now() - st;
     const dx = e.clientX - sx, dy = e.clientY - sy;
     /* 아래로 훅 쓸면 바로 내림 */
-    if(dir === 'v' && dy > cell * 3 && dt < 260){ hardDrop(); return; }
-    /* 내려가기가 시작되기 전에 뗐으면 톡 — 자리에 따라 왼쪽·회전·오른쪽 */
-    if(!began && dir === null && dt < PRESS_DELAY + 120
-       && Math.abs(dx) < 10 && Math.abs(dy) < 10){
-      const z = zoneOf(e.clientX);
-      if(z === 'l') tryMove(-1, 0);
-      else if(z === 'r') tryMove(1, 0);
-      else tryRotate(1);
-      flashZone(z);
-    }
+    if(dir === 'v' && dy > cell * 3 && dt < 260) hardDrop();
+    /* 내려가기가 시작되기 전에 뗐으면 회전 */
+    else if(!began && dir === null && dt < PRESS_DELAY + 120
+            && Math.abs(dx) < 10 && Math.abs(dy) < 10) tryRotate(1);
   }
   wrapEl.addEventListener('pointerup', end);
   wrapEl.addEventListener('pointercancel', function(){ active = false; stopPress(); });
