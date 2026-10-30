@@ -49,7 +49,7 @@
             font-variant-numeric:tabular-nums;
             white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-  #next-stat{ flex:0 0 56px; padding:3px 6px; }
+  #next-stat{ flex:0 0 70px; padding:3px 6px; }
   #cv-next{ display:block; margin:1px auto 0; }
 
   /* ---------- 아래 조작 버튼 ---------- */
@@ -119,9 +119,9 @@
   #board-wrap.shake{ animation:shake .22s ease; }
   @keyframes shake-big{
     0%,100%{ transform:translate(0,0); }
-    12%{ transform:translate(-6px,4px); }  28%{ transform:translate(7px,-5px); }
-    44%{ transform:translate(-5px,-4px); } 60%{ transform:translate(6px,5px); }
-    78%{ transform:translate(-3px,2px); }
+    12%{ transform:translate(-4px,3px); }  28%{ transform:translate(4px,-3px); }
+    44%{ transform:translate(-3px,-2px); } 60%{ transform:translate(3px,3px); }
+    78%{ transform:translate(-2px,1px); }
   }
   #board-wrap.shake-big{ animation:shake-big .36s ease; }
 
@@ -324,7 +324,7 @@
 
 /* ================= 상수 ================= */
 const COLS = 10, ROWS = 20;
-const LOCK_DELAY = 500, LOCK_RESET_MAX = 15, CLEAR_MS = 330;   /* 지워지는 순간을 조금 길게 보여 준다 */
+const LOCK_DELAY = 500, LOCK_RESET_MAX = 15, CLEAR_MS = 280;
 const SOFT_MS = 30;                 /* 키보드 ↓ 를 누르고 있을 때 한 칸 내려오는 시간 */
 /* 화면을 꾹 누르고 있을 때. 처음엔 느리게 내려오고 오래 누를수록 빨라진다.
    아이폰은 누르는 힘을 알려 주지 않으므로 '누르고 있는 시간'으로 대신한다. */
@@ -1001,9 +1001,9 @@ function hardDrop(){
     Object.keys(bottom).forEach(function(cx1){
       const by = bottom[cx1];
       if(by < 0) return;
-      spawnParts((Number(cx1) + .5) * cell, (by + 1) * cell, COLORS[kind], 5, cell * 0.012);
+      spawnParts((Number(cx1) + .5) * cell, (by + 1) * cell, COLORS[kind], 2, cell * 0.008);
     });
-    shake(d > 8);
+    shake(d > 11);
   }
   lockPiece();
 }
@@ -1061,18 +1061,21 @@ function lockPiece(){
     beamRows = clearRows.slice();
     beamLeft = CLEAR_MS;
     /* 지워질 칸마다 제 색으로 터진다. 여러 줄일수록 세게. */
-    const power = cell * (0.012 + clearRows.length * 0.006);
+    const power = cell * (0.008 + clearRows.length * 0.003);
     clearRows.forEach(function(ry){
       for(let x=0;x<COLS;x++){
         const k = grid[ry][x];
         if(!k) continue;
-        spawnParts((x + .5) * cell, (ry + .5) * cell, COLORS[k], clearRows.length >= 3 ? 5 : 4, power);
+        spawnParts((x + .5) * cell, (ry + .5) * cell, COLORS[k], clearRows.length >= 3 ? 3 : 2, power);
       }
     });
-    shake(clearRows.length >= 3);
+    shake(clearRows.length >= 4);
   }else{
-    cs.forEach(function(c){
-      if(c[1] >= 0) spawnParts((c[0] + .5) * cell, (c[1] + .9) * cell, COLORS[piece ? piece.kind : 'I'], 2, cell * 0.006);
+    const low = {};
+    cs.forEach(function(c){ if(low[c[0]] == null || c[1] > low[c[0]]) low[c[0]] = c[1]; });
+    Object.keys(low).forEach(function(cx1){
+      if(low[cx1] >= 0) spawnParts((Number(cx1) + .5) * cell, (low[cx1] + .95) * cell,
+                                   COLORS[piece.kind], 1, cell * 0.004);
     });
     takeGarbage();
     spawn();
@@ -1596,7 +1599,7 @@ function drawGhost(cx, px, py, size, color){
 /* ---- 터지는 조각들 ----
    줄이 지워지거나 블록이 바닥에 꽂힐 때 작은 네모들이 사방으로 튄다.
    보드 캔버스 안에서만 그리므로 바깥으로 새지 않는다. */
-const MAX_PARTS = 170;
+const MAX_PARTS = 90;
 let parts = [];
 let trail = null;                  /* 바로 내릴 때 남는 잔상 */
 let beamRows = [], beamLeft = 0;   /* 지워지는 줄을 가로지르는 빛 */
@@ -1609,8 +1612,8 @@ function spawnParts(cx0, cy0, color, n, power){
       x: cx0, y: cy0,
       vx: Math.cos(a) * sp,
       vy: Math.sin(a) * sp - power * 0.35,     /* 살짝 위로 솟았다 떨어진다 */
-      life: 1, fade: 1 / (380 + Math.random() * 420),
-      size: cell * (0.16 + Math.random() * 0.2),
+      life: 1, fade: 1 / (280 + Math.random() * 280),
+      size: cell * (0.12 + Math.random() * 0.14),
       c: color
     });
   }
@@ -1626,22 +1629,26 @@ function stepFx(dt){
     p.life -= p.fade * dt;
     if(p.life <= 0) parts.splice(i, 1);
   }
-  if(trail){ trail.life -= dt / 240; if(trail.life <= 0) trail = null; }
+  if(trail){ trail.life -= dt / 170; if(trail.life <= 0) trail = null; }
   if(beamLeft > 0) beamLeft = Math.max(0, beamLeft - dt);
 }
 
+/* 바로 내린 길에 남는 자국. 쌓인 블록보다 먼저 그려야 블록을 덮지 않는다.
+   길게 끌면 화면을 가로지르는 막대처럼 보여서, 닿은 자리 근처만 짧게 남긴다. */
+function drawTrail(){
+  if(!trail) return;
+  const f = Math.max(0, trail.life);
+  const tail = Math.min(trail.y1 - trail.y0, 4);      /* 최대 네 칸까지만 */
+  const y0 = (trail.y1 - tail) * cell;
+  boardCx.globalAlpha = f * 0.2;
+  boardCx.fillStyle = COLORS[trail.kind] || '#ffffff';
+  trail.cols.forEach(function(cx1){
+    boardCx.fillRect(cx1 * cell + cell * 0.38, y0, cell * 0.24, tail * cell);
+  });
+  boardCx.globalAlpha = 1;
+}
+
 function drawFx(){
-  /* 바로 내린 길에 남는 세로 잔상 */
-  if(trail){
-    const f = Math.max(0, trail.life);
-    boardCx.globalAlpha = f * 0.5;
-    boardCx.fillStyle = COLORS[trail.kind] || '#ffffff';
-    trail.cols.forEach(function(cx1){
-      boardCx.fillRect(cx1 * cell + cell * 0.3, trail.y0 * cell,
-                       cell * 0.4, (trail.y1 - trail.y0) * cell);
-    });
-    boardCx.globalAlpha = 1;
-  }
   /* 지워지는 줄을 가로지르는 빛 */
   if(beamLeft > 0 && beamRows.length){
     const f = beamLeft / CLEAR_MS;
@@ -1649,10 +1656,10 @@ function drawFx(){
     beamRows.forEach(function(ry){
       const g2 = boardCx.createLinearGradient(0, 0, w, 0);
       g2.addColorStop(0, 'rgba(255,255,255,0)');
-      g2.addColorStop(0.5, 'rgba(255,255,255,' + (f * 0.9).toFixed(3) + ')');
+      g2.addColorStop(0.5, 'rgba(255,255,255,' + (f * 0.45).toFixed(3) + ')');
       g2.addColorStop(1, 'rgba(255,255,255,0)');
       boardCx.fillStyle = g2;
-      const hh = cell * (0.25 + (1 - f) * 1.1);
+      const hh = cell * (0.2 + (1 - f) * 0.6);
       boardCx.fillRect(0, ry * cell + cell / 2 - hh / 2, w, hh);
     });
   }
@@ -1706,6 +1713,8 @@ function drawBoard(){
   for(let x=1;x<COLS;x++){ boardCx.moveTo(x*cell+.5, 0); boardCx.lineTo(x*cell+.5, h); }
   for(let y=1;y<ROWS;y++){ boardCx.moveTo(0, y*cell+.5); boardCx.lineTo(w, y*cell+.5); }
   boardCx.stroke();
+
+  drawTrail();
 
   const flash = state === 'clearing' ? (1 - clearTimer / CLEAR_MS) : 0;
   for(let y=0;y<ROWS;y++){
@@ -1960,7 +1969,7 @@ function layout(){
 
   cell = Math.max(10, Math.floor(Math.min(availW / COLS, sh / ROWS)));
   sizeCanvas(boardCv, boardCx, cell * COLS, cell * ROWS);
-  sizeCanvas(nextCv, nextCx, 44, 22);
+  sizeCanvas(nextCv, nextCx, 58, 30);
   drawNext();
   if(showOpp){
     oppEl.style.width = oppW + 'px';
